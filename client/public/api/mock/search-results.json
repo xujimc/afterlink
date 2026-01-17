@@ -1,0 +1,104 @@
+{
+  "results": [
+    {
+      "id": 1,
+      "slug": "what-is-machine-learning",
+      "title": "What is Machine Learning? A Comprehensive Guide",
+      "excerpt": "Understanding the fundamentals of machine learning and how it's transforming technology across industries.",
+      "author": "Sarah Chen",
+      "date": "2024-01-15",
+      "readTime": "8 min read",
+      "category": "Technology"
+    },
+    {
+      "id": 2,
+      "slug": "building-scalable-microservices",
+      "title": "Building Scalable Microservices Architecture",
+      "excerpt": "Learn how to design and implement microservices that scale with your business needs.",
+      "author": "James Wilson",
+      "date": "2024-01-14",
+      "readTime": "12 min read",
+      "category": "Engineering"
+    },
+    {
+      "id": 3,
+      "slug": "web-design-trends-2024",
+      "title": "Web Design Trends for 2024",
+      "excerpt": "Discover the latest design trends and how to incorporate them into your websites.",
+      "author": "Emma Rodriguez",
+      "date": "2024-01-13",
+      "readTime": "6 min read",
+      "category": "Design"
+    },
+    {
+      "id": 4,
+      "slug": "python-performance-optimization",
+      "title": "Python Performance Optimization Techniques",
+      "excerpt": "Boost your Python applications with practical optimization strategies and profiling tools.",
+      "author": "Mike Johnson",
+      "date": "2024-01-12",
+      "readTime": "10 min read",
+      "category": "Programming"
+    },
+    {
+      "id": 5,
+      "slug": "introduction-to-ai-ethics",
+      "title": "Introduction to AI Ethics and Responsible Development",
+      "excerpt": "Understanding the ethical implications of AI and how to build responsible AI systems.",
+      "author": "Dr. Lisa Park",
+      "date": "2024-01-11",
+      "readTime": "9 min read",
+      "category": "Technology"
+    },
+    {
+      "id": 6,
+      "slug": "cloud-computing-guide",
+      "title": "Cloud Computing: A Practical Guide for Beginners",
+      "excerpt": "Get started with cloud computing platforms and understand different service models.",
+      "author": "Tom Anderson",
+      "date": "2024-01-10",
+      "readTime": "11 min read",
+      "category": "Infrastructure"
+    },
+    {
+      "id": 7,
+      "slug": "react-hooks-deep-dive",
+      "title": "Deep Dive into React Hooks",
+      "excerpt": "Master React hooks and learn how to use them effectively in your applications.",
+      "author": "Jessica Lee",
+      "date": "2024-01-09",
+      "readTime": "13 min read",
+      "category": "Web Development"
+    },
+    {
+      "id": 8,
+      "slug": "mobile-app-development-best-practices",
+      "title": "Mobile App Development Best Practices",
+      "excerpt": "Learn the essential practices for building successful mobile applications.",
+      "author": "David Kumar",
+      "date": "2024-01-08",
+      "readTime": "7 min read",
+      "category": "Mobile"
+    },
+    {
+      "id": 9,
+      "slug": "data-science-workflow",
+      "title": "Building an Effective Data Science Workflow",
+      "excerpt": "Streamline your data science projects with proven workflows and best practices.",
+      "author": "Rachel Martinez",
+      "date": "2024-01-07",
+      "readTime": "14 min read",
+      "category": "Data Science"
+    },
+    {
+      "id": 10,
+      "slug": "cybersecurity-fundamentals",
+      "title": "Cybersecurity Fundamentals Every Developer Should Know",
+      "excerpt": "Essential security practices and techniques to protect your applications.",
+      "author": "Christopher Brown",
+      "date": "2024-01-06",
+      "readTime": "10 min read",
+      "category": "Security"
+    }
+  ]
+}
