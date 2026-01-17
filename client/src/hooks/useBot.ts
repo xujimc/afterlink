@@ -8,6 +8,11 @@ export interface Article {
   snippet: string;
 }
 
+export interface FullArticle {
+  title: string;
+  content: string;
+}
+
 type ChatClient = Awaited<ReturnType<typeof import("@botpress/chat").Client.connect>>;
 
 export function useBot() {
@@ -18,7 +23,7 @@ export function useBot() {
     setIsReady(true);
   }, []);
 
-  const search = useCallback(async (query: string): Promise<Article[]> => {
+  const getClient = useCallback(async () => {
     if (typeof window === "undefined") {
       throw new Error("Cannot run on server");
     }
@@ -28,53 +33,49 @@ export function useBot() {
       throw new Error("NEXT_PUBLIC_BOTPRESS_WEBHOOK_ID is not configured");
     }
 
-    const chat = await import("@botpress/chat");
-
     if (!clientRef.current) {
+      const chat = await import("@botpress/chat");
       clientRef.current = await chat.Client.connect({ webhookId });
     }
 
-    const { conversation } = await clientRef.current.createConversation({});
+    return clientRef.current;
+  }, []);
 
-    await clientRef.current.createMessage({
-      conversationId: conversation.id,
-      payload: {
-        type: "text",
-        text: query,
-      },
-    });
-
-    // Poll for bot response
-    const maxAttempts = 30;
+  const waitForBotResponse = useCallback(async (
+    client: ChatClient,
+    conversationId: string,
+    userMessageId: string,
+    skipTexts: string[] = []
+  ): Promise<string> => {
+    const maxAttempts = 60;
     const pollInterval = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
-      const { messages } = await clientRef.current.listMessages({
-        conversationId: conversation.id,
-      });
+      const { messages } = await client.listMessages({ conversationId });
 
-      // Look for a message that contains JSON array (the articles)
+      console.log(`[useBot] Attempt ${attempt + 1}, messages:`, messages.length);
+
       for (const msg of messages) {
+        // Skip the user's own message
+        if (msg.id === userMessageId) continue;
+
         const payload = msg.payload as { type?: string; text?: string };
 
         if (payload?.type === "text" && payload?.text) {
           const text = payload.text.trim();
 
-          // Skip "Searching..." message
-          if (text === "Searching...") continue;
+          // Skip specified texts (like "Searching...", "Generating article...")
+          if (skipTexts.includes(text)) continue;
 
-          // Try to parse as JSON array
-          if (text.startsWith("[")) {
-            try {
-              const articles = JSON.parse(text) as Article[];
-              if (Array.isArray(articles) && articles.length > 0) {
-                return articles;
-              }
-            } catch {
-              // Not valid JSON, continue
-            }
+          // Skip if it starts with our command prefixes (user messages)
+          if (text.startsWith("SEARCH:") || text.startsWith("ARTICLE:")) continue;
+
+          // Return substantial text response
+          if (text.length > 20) {
+            console.log("[useBot] Found bot response:", text.substring(0, 100) + "...");
+            return text;
           }
         }
       }
@@ -83,5 +84,51 @@ export function useBot() {
     throw new Error("Timeout waiting for bot response");
   }, []);
 
-  return { search, isReady };
+  const search = useCallback(async (query: string): Promise<Article[]> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: `SEARCH: ${query}`,
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, ["Searching..."]);
+
+    try {
+      const articles = JSON.parse(response) as Article[];
+      if (Array.isArray(articles)) {
+        return articles;
+      }
+    } catch {
+      throw new Error("Failed to parse search results");
+    }
+
+    return [];
+  }, [getClient, waitForBotResponse]);
+
+  const getArticle = useCallback(async (title: string): Promise<FullArticle> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: `ARTICLE: ${title}`,
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, ["Generating article..."]);
+
+    return {
+      title,
+      content: response,
+    };
+  }, [getClient, waitForBotResponse]);
+
+  return { search, getArticle, isReady };
 }

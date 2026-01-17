@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useBot, Article } from "@/hooks/useBot";
 
 export default function Home() {
@@ -9,6 +10,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { search } = useBot();
+  const router = useRouter();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +28,11 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleArticleClick = (article: Article) => {
+    const slug = encodeURIComponent(article.title.toLowerCase().replace(/\s+/g, "-"));
+    router.push(`/article/${slug}?title=${encodeURIComponent(article.title)}`);
   };
 
   return (
@@ -64,23 +71,13 @@ export default function Home() {
         {results && results.length > 0 && (
           <div className="space-y-8">
             {results.map((result, index) => (
-              <article key={index} className="group">
-                <a
-                  href={result.url}
-                  className="block"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <p className="text-sm text-[var(--muted)] mb-1">
-                    {result.url}
-                  </p>
-                  <h2 className="text-xl font-semibold mb-2 group-hover:underline">
-                    {result.title}
-                  </h2>
-                  <p className="text-[var(--muted)] leading-relaxed">
-                    {result.snippet}
-                  </p>
-                </a>
+              <article key={index} className="group cursor-pointer" onClick={() => handleArticleClick(result)}>
+                <h2 className="text-xl font-semibold mb-2 group-hover:underline">
+                  {result.title}
+                </h2>
+                <p className="text-[var(--muted)] leading-relaxed">
+                  {result.snippet}
+                </p>
               </article>
             ))}
           </div>
