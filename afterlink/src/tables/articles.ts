@@ -6,7 +6,6 @@ export const articlesTable = new Table({
     title: z.string(),
     slug: z.string(),
     snippet: z.string(),
-    content: z.string(),
-    questions: z.string(), // JSON string of integrated questions
+    // Content stored in articleContentTable to avoid 4KB row limit
   },
 });

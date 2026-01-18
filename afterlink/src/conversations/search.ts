@@ -1,5 +1,6 @@
 import { Conversation, adk, z, context } from "@botpress/runtime";
 import { articlesTable } from "../tables/articles";
+import { articleContentTable } from "../tables/articleContent";
 
 export default new Conversation({
   channel: "chat.channel",
@@ -126,70 +127,30 @@ export default new Conversation({
       try {
         // Generate the article content with naturally embedded reader questions
         const articleContent = await adk.zai.text(
-          `Write a short, captivating article (3-4 paragraphs) about: "${title}".
-           Do not include the title in your response, just the article body.
-           Separate paragraphs with double newlines.
-           Keep it concise - around 250 words.
+          `Write an article (5-7 paragraphs, 500-600 words) about: "${title}".
 
-           WRITING STYLE - Use these techniques to hook and keep readers:
+           CRITICAL FORMAT REQUIREMENT:
+           You MUST embed exactly 2-3 questions using this exact format: {{Q:question text here}}
+           Example: "This technique works fast. {{Q:But would it work for my situation?}} The results speak for themselves."
 
-           1. OPENING HOOK: Start with ONE of these:
-              - A surprising statistic or fact
-              - A bold, contrarian statement
-              - A "what if" scenario
-              - A relatable problem or frustration
+           BEFORE WRITING:
+           Think of 2-3 personal questions a reader might have about "${title}" that depend on their:
+           age, budget, health, experience level, lifestyle, or goals.
 
-           2. CONVERSATIONAL TONE:
-              - Write like you're talking to a smart friend
-              - Use "you" and "your" frequently
-              - Short punchy sentences mixed with longer ones
-              - Occasional one-word sentences for impact. Like this.
+           QUESTION RULES:
+           - Questions must use first person ("I", "my", "me")
+           - Questions must require personal context to answer
+           - The article must NOT answer the question in the following sentence
+           - Format: {{Q:But is my... / Should I with my... / Could this work for my...}}
 
-           3. KEEP THEM READING:
-              - Drop hints about what's coming ("Here's where it gets interesting...")
-              - Use contrast (old way vs new way, expectation vs reality)
-              - Include specific numbers and details (not "many people" but "73% of users")
-              - Challenge common assumptions
+           WRITING STYLE:
+           - Conversational tone, like talking to a smart friend
+           - Start with a hook (surprising fact, bold statement, or relatable problem)
+           - Use "you" and "your" frequently
+           - Mix short punchy sentences with longer ones
 
-           4. POWER WORDS: Use emotional language - "surprising", "secret", "mistake", "actually", "hidden", "finally"
-
-           EMBEDDED QUESTIONS: Embed 2-3 reader questions using: {{Q:question here}}
-
-           CRITICAL RULES FOR QUESTIONS:
-
-           1. QUESTIONS MUST REQUIRE PERSONAL CONTEXT TO ANSWER
-              The article cannot answer these because it doesn't know the reader's:
-              - Age, health conditions, skin type, body type
-              - Budget, financial situation
-              - Schedule, lifestyle, living situation
-              - Experience level, skill level
-              - Personal goals, preferences
-              - Location, climate, environment
-
-           2. THE ARTICLE MUST NOT ANSWER THE QUESTION
-              Do NOT place a question if the next sentence answers it.
-              The question should remain OPEN - only answerable through personalized conversation.
-
-           BADExample (article answers the question):
-              "Retinol is powerful. {{Q:Is it safe for my age?}} Generally, anyone over 25 can use it safely."
-              ❌ The next sentence answers the question!
-
-           GOOD Examples (requires personal context, not answered):
-              "Retinol speeds up cell turnover dramatically. {{Q:But is my skin ready for something this strong?}} The results can be transformative when used correctly."
-              ✓ Article continues without answering - only the reader knows their skin's condition.
-
-              "High-intensity training burns 3x more calories. {{Q:Could this be too intense for my fitness level?}} Many athletes swear by this method."
-              ✓ Only the reader knows their fitness level.
-
-              "Premium ingredients cost significantly more. {{Q:Is it worth it for my budget right now?}} The difference in quality is noticeable."
-              ✓ Only the reader knows their financial situation.
-
-           Questions MUST:
-           - Require the reader's PERSONAL circumstances to answer
-           - Use FIRST PERSON ("I", "my", "me")
-           - Start with: "But is my...", "Should I with my...", "What if my...", "Could this work for my...", "Is my... ready for..."
-           - NOT be answerable by general information in the article`,
-          { length: 700 }
+           Do not include the title. Separate paragraphs with double newlines.`,
+          { length: 1500 }
         );
 
         // Generate a snippet (remove any markers from snippet source)
@@ -203,19 +164,31 @@ export default new Conversation({
         // Create slug from title
         const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-        // Save to table (content includes {{Q:...}} markers)
+        // Save metadata to articlesTable
         const { rows } = await articlesTable.createRows({
           rows: [{
             title,
             slug,
             snippet: snippet.trim(),
-            content: articleContent,
-            questions: "[]", // Questions are now embedded in content
           }],
         });
 
         const savedRow = rows[0];
-        logger.info("[search] Saved article with id:", savedRow?.id);
+        const articleId = savedRow?.id;
+
+        if (!articleId) {
+          throw new Error("Failed to save article metadata");
+        }
+
+        // Save content to articleContentTable (separate to avoid 4KB limit)
+        await articleContentTable.createRows({
+          rows: [{
+            articleId,
+            content: articleContent,
+          }],
+        });
+
+        logger.info("[search] Saved article with id:", articleId);
 
         // Return content with embedded question markers
         await conversation.send({
@@ -244,12 +217,13 @@ export default new Conversation({
       logger.info("[search] Get article request, id:", id);
 
       try {
-        const { rows } = await articlesTable.findRows({
-          filter: { id: { $eq: id } },
+        // Fetch metadata from articlesTable
+        const { rows: metadataRows } = await articlesTable.findRows({
+          filter: { id: { $eq: id } } as any,
         });
 
-        const row = rows[0];
-        if (!row) {
+        const metadata = metadataRows[0];
+        if (!metadata) {
           await conversation.send({
             type: "text",
             payload: { text: JSON.stringify({ error: "Article not found" }) },
@@ -257,13 +231,21 @@ export default new Conversation({
           return;
         }
 
+        // Fetch content from articleContentTable
+        const { rows: contentRows } = await articleContentTable.findRows({
+          filter: { articleId: { $eq: id } },
+        });
+
+        const contentRow = contentRows[0];
+        const content = contentRow?.content || "";
+
         await conversation.send({
           type: "text",
           payload: {
             text: JSON.stringify({
-              id: row.id,
-              title: row.title,
-              content: row.content,
+              id: metadata.id,
+              title: metadata.title,
+              content,
             }),
           },
         });
@@ -328,6 +310,7 @@ export default new Conversation({
     if (text === "CLEAR_ARTICLES") {
       try {
         await articlesTable.deleteAllRows();
+        await articleContentTable.deleteAllRows();
         await conversation.send({
           type: "text",
           payload: { text: JSON.stringify({ success: true, message: "All articles deleted" }) },
