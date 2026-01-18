@@ -105,8 +105,8 @@ export default new Conversation({
           }
         }
 
-        // Calculate how many new suggestions we need
-        const newCount = Math.max(0, 3 - relevantExisting.length);
+        // Calculate how many new suggestions we need (up to 10 total results)
+        const newCount = Math.max(0, 10 - relevantExisting.length);
         let newSuggestions: Array<{ title: string; snippet: string }> = [];
 
         if (newCount > 0) {
@@ -122,7 +122,7 @@ export default new Conversation({
 
              Return ONLY valid JSON, no other text.
              Example: [{"title":"...", "snippet":"..."}]`,
-            { length: 400 }
+            { length: 1200 }
           );
 
           try {
@@ -325,6 +325,7 @@ export default new Conversation({
           conversationHistory,
           userId,
           isFirstMessage,
+          contactInfo,
         } = JSON.parse(jsonStr) as {
           articleTitle: string;
           paragraphContext: string;
@@ -332,6 +333,7 @@ export default new Conversation({
           conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
           userId: string;
           isFirstMessage: boolean;
+          contactInfo?: { userName: string; contactPreference: "email" | "phone"; contactValue: string };
         };
 
         logger.info("[chat] Article question received", { userId, isFirstMessage, question });
@@ -467,7 +469,7 @@ export default new Conversation({
                 });
                 logger.info("[chat] Updated existing lead note");
               } else {
-                // Create new row
+                // Create new row with contact info if available
                 await userInsightsTable.createRows({
                   rows: [{
                     oduserId: userId,
@@ -475,9 +477,13 @@ export default new Conversation({
                     category: extracted.theme || "other",
                     insight: extracted.note,
                     rawMessage: question,
+                    userName: contactInfo?.userName,
+                    contactPreference: contactInfo?.contactPreference,
+                    userEmail: contactInfo?.contactPreference === "email" ? contactInfo?.contactValue : undefined,
+                    userPhone: contactInfo?.contactPreference === "phone" ? contactInfo?.contactValue : undefined,
                   }],
                 });
-                logger.info("[chat] Created new lead note");
+                logger.info("[chat] Created new lead note with contact info");
               }
             }
           } catch (e) {
@@ -971,6 +977,57 @@ Return JSON only:
         await conversation.send({
           type: "text",
           payload: { text: JSON.stringify({ error: "Failed to match ICP" }) },
+        });
+      }
+      return;
+    }
+
+    // Handle SAVE_LEAD_CONTACT request (from article gate)
+    if (text.startsWith("SAVE_LEAD_CONTACT:")) {
+      const jsonStr = text.replace("SAVE_LEAD_CONTACT:", "").trim();
+
+      try {
+        const { oduserId, articleTitle, userName, contactPreference, contactValue } = JSON.parse(jsonStr) as {
+          oduserId: string;
+          articleTitle: string;
+          userName: string;
+          contactPreference: "email" | "phone";
+          contactValue: string;
+        };
+
+        logger.info("[search] Saving lead contact:", { oduserId, userName, contactPreference });
+
+        // Check if row exists for this user
+        const { rows: existingRows } = await userInsightsTable.findRows({
+          filter: { oduserId: { $eq: oduserId } },
+        });
+
+        if (existingRows.length > 0) {
+          // Update existing row with contact info
+          await userInsightsTable.updateRows({
+            rows: [{
+              id: existingRows[0].id,
+              userName,
+              contactPreference,
+              userEmail: contactPreference === "email" ? contactValue : existingRows[0].userEmail,
+              userPhone: contactPreference === "phone" ? contactValue : existingRows[0].userPhone,
+            }],
+          });
+          logger.info("[search] Updated existing lead with contact info");
+        } else {
+          // Don't create row with only contact info - wait for actual insight data
+          logger.info("[search] No existing lead found, contact info will be stored when user provides insight");
+        }
+
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ success: true }) },
+        });
+      } catch (error) {
+        logger.error("[search] Error saving lead contact:", error);
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ success: false, error: String(error) }) },
         });
       }
       return;

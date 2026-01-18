@@ -8,5 +8,10 @@ export const userInsightsTable = new Table({
     category: z.string(),      // budget, age, goal, concern, lifestyle, preference, timeline, etc.
     insight: z.string(),       // The extracted value (e.g., "oily skin", "$200/month", "45 years old")
     rawMessage: z.string(),    // The actual message the user sent
+    // Contact info from article gate
+    userName: z.string().optional(),
+    userEmail: z.string().optional(),
+    userPhone: z.string().optional(),
+    contactPreference: z.string().optional(), // "email" | "phone"
   },
 });

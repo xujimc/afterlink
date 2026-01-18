@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter, useParams } from "next/navigation";
 import { useBot, FullArticle, ConversationMessage } from "@/hooks/useBot";
 import { InlineChat } from "@/components/InlineChat";
+import { ArticleGate } from "@/components/ArticleGate";
 
 // Parse content and extract question markers
 interface ContentPart {
@@ -55,17 +56,24 @@ export default function ArticlePage() {
   const router = useRouter();
   const slug = params.slug as string;
   const title = searchParams.get("title");
-  const { getArticle, getStoredArticle, askArticleQuestion } = useBot();
+  const { getArticle, getStoredArticle, askArticleQuestion, saveLeadContact } = useBot();
 
   const [article, setArticle] = useState<FullArticle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Gate state - show form before article
+  const [isGatePassed, setIsGatePassed] = useState(false);
+  const [isSubmittingGate, setIsSubmittingGate] = useState(false);
 
   // Track which question is currently expanded
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
 
   // Generate a unique session ID for this article page load (not persistent)
   const sessionIdRef = useRef<string>(`session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+
+  // Store contact info from gate for passing to insight creation
+  const contactInfoRef = useRef<{ userName: string; contactPreference: "email" | "phone"; contactValue: string } | null>(null);
 
   // Prevent double execution in React Strict Mode
   const hasStartedRef = useRef(false);
@@ -121,9 +129,41 @@ export default function ArticlePage() {
       });
 
       const fullContext = contextParts.join("\n\n");
-      return askArticleQuestion(article.title, fullContext, question, history, sessionIdRef.current);
+      return askArticleQuestion(article.title, fullContext, question, history, sessionIdRef.current, contactInfoRef.current || undefined);
     };
   }, [article, askArticleQuestion]);
+
+  // Handle gate form submission
+  const handleGateSubmit = useCallback(async (data: {
+    name: string;
+    preference: "email" | "phone";
+    value: string;
+  }) => {
+    setIsSubmittingGate(true);
+    // Store contact info for later use when creating insights
+    contactInfoRef.current = {
+      userName: data.name,
+      contactPreference: data.preference,
+      contactValue: data.value,
+    };
+    try {
+      const articleTitle = article?.title || title || "Unknown";
+      await saveLeadContact(
+        sessionIdRef.current,
+        articleTitle,
+        data.name,
+        data.preference,
+        data.value
+      );
+      setIsGatePassed(true);
+    } catch (err) {
+      console.error("[ArticlePage] Error saving lead contact:", err);
+      // Still let them through even if save fails
+      setIsGatePassed(true);
+    } finally {
+      setIsSubmittingGate(false);
+    }
+  }, [article, title, saveLeadContact]);
 
   const handleQuestionClick = (questionId: string) => {
     setExpandedQuestionId(expandedQuestionId === questionId ? null : questionId);
@@ -192,6 +232,14 @@ export default function ArticlePage() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* Gate overlay - shown until user submits contact info */}
+      {!isGatePassed && (
+        <ArticleGate
+          onSubmit={handleGateSubmit}
+          isSubmitting={isSubmittingGate}
+        />
+      )}
+
       <header className="border-b border-[var(--border)] py-4">
         <div className="max-w-3xl mx-auto px-6">
           <button
@@ -204,9 +252,10 @@ export default function ArticlePage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-12">
+        {/* Show loading/article behind the gate - article loads in background */}
         {isLoading && (
           <div className="text-[var(--muted)]">
-            {title ? "Generating article..." : "Loading article..."}
+            Loading article...
           </div>
         )}
 

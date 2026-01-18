@@ -199,7 +199,16 @@ export default function BusinessDashboard() {
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${getThemeColor(firstInsight.category)}`}>
                           {firstInsight.category}
                         </span>
-                        <span className="text-[var(--muted)] font-mono text-xs">{userId.substring(0, 20)}...</span>
+                        {firstInsight.userName ? (
+                          <span className="font-medium text-[var(--foreground)]">{firstInsight.userName}</span>
+                        ) : (
+                          <span className="text-[var(--muted)] font-mono text-xs">{userId.substring(0, 20)}...</span>
+                        )}
+                        {(firstInsight.userEmail || firstInsight.userPhone) && (
+                          <span className="text-sm text-[var(--muted)]">
+                            {firstInsight.userEmail || firstInsight.userPhone}
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-[var(--muted)]">
                         {new Date(firstInsight.createdAt).toLocaleDateString()}

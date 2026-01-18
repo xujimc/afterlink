@@ -28,6 +28,11 @@ export interface UserInsight {
   rawMessage: string;
   createdAt: string;
   updatedAt: string;
+  // Contact info from article gate
+  userName?: string;
+  userEmail?: string;
+  userPhone?: string;
+  contactPreference?: string;
 }
 
 type ChatClient = Awaited<ReturnType<typeof import("@botpress/chat").Client.connect>>;
@@ -207,7 +212,8 @@ export function useBot() {
     paragraphContext: string,
     question: string,
     conversationHistory: ConversationMessage[],
-    sessionId?: string
+    sessionId?: string,
+    contactInfo?: { userName: string; contactPreference: "email" | "phone"; contactValue: string }
   ): Promise<string> => {
     const client = await getClient();
     const { conversation } = await client.createConversation({});
@@ -223,6 +229,7 @@ export function useBot() {
       conversationHistory,
       userId: oduserId,
       isFirstMessage,
+      contactInfo,
     });
 
     const { message } = await client.createMessage({
@@ -346,5 +353,39 @@ export function useBot() {
     }
   }, [getClient, waitForBotResponse]);
 
-  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, getInsights, seedMockData, matchICP, isReady };
+  const saveLeadContact = useCallback(async (
+    oduserId: string,
+    articleTitle: string,
+    userName: string,
+    contactPreference: "email" | "phone",
+    contactValue: string
+  ): Promise<{ success: boolean }> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const payload = JSON.stringify({ oduserId, articleTitle, userName, contactPreference, contactValue });
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: `SAVE_LEAD_CONTACT:${payload}`,
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      const parsed = JSON.parse(response) as { success: boolean; error?: string };
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+      return { success: parsed.success };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      throw new Error("Failed to save lead contact");
+    }
+  }, [getClient, waitForBotResponse]);
+
+  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, getInsights, seedMockData, matchICP, saveLeadContact, isReady };
 }
