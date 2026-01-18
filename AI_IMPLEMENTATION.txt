@@ -303,134 +303,173 @@ WHY THIS IS RELIABLE:
 LOCATION: search.ts, lines 415-446
 
 ================================================================================
-5. ICP MATCHING & SCORING
+5. ICP MATCHING & SCORING (B2C Lead Scoring)
 ================================================================================
 
-This is a THREE-PHASE system that combines AI extraction with deterministic
-scoring for transparent, consistent results.
+This system uses a B2C-specific lead scoring approach based on industry
+frameworks (adapted from BANT, RFM, and behavioral scoring for consumers).
+
+Unlike B2B frameworks that focus on company size, authority, and decision
+processes, B2C scoring focuses on individual consumer behavior, spending
+patterns, and purchase intent signals.
 
 --------------------------------------------------------------------------------
-5.1 ICP CRITERIA EXTRACTION (Phase 1)
+5.1 THE 5 B2C SCORING DIMENSIONS
 --------------------------------------------------------------------------------
 
-PURPOSE: Convert free-form ICP description into structured, scoreable criteria
+| Dimension   | Weight | What It Measures                              |
+|-------------|--------|-----------------------------------------------|
+| FIT         | 35%    | Conceptual overlap with ICP's world/domain    |
+| BUDGET      | 20%    | Spending capacity matches ICP expectations    |
+| NEED        | 20%    | Has a problem/desire the ICP addresses        |
+| URGENCY     | 15%    | Active buying signals vs passive browsing     |
+| ENGAGEMENT  | 10%    | How much useful detail they shared            |
 
-IMPLEMENTATION:
-- Input: ICP description text
-- Output: Structured JSON with criteria and weights
+WHY THESE DIMENSIONS:
+- Based on B2C lead scoring research (not B2B frameworks like BANT/MEDDIC)
+- FIT is weighted highest because irrelevant leads waste resources
+- BUDGET and NEED are equal - both critical for conversion
+- URGENCY differentiates hot leads from cold ones
+- ENGAGEMENT indicates data quality and lead seriousness
 
-OUTPUT SCHEMA:
-{
-  "ageRange": { "min": number|null, "max": number|null },
-  "incomeLevel": "low"|"medium"|"high"|"very_high"|null,
-  "monthlyBudget": { "min": number|null },
-  "interests": ["category1", "category2", ...],
-  "intentRequired": true|false,
-  "locationPreference": "urban"|"suburban"|"rural"|null,
-  "weights": {
-    "age": 15,
-    "income": 15,
-    "budget": 25,
-    "interests": 25,
-    "intent": 20
-  }
-}
+--------------------------------------------------------------------------------
+5.2 CONCEPTUAL MATCHING (The Key Innovation)
+--------------------------------------------------------------------------------
+
+PURPOSE: Score FIT based on conceptual/semantic overlap, not literal word matching
+
+THE PROBLEM WITH LITERAL MATCHING:
+- "fine lines" and "wrinkles" are the same concept but different words
+- "bubble tea" is a "sweet beverage" but substring matching fails
+- "anti-aging products" relates to "aging concerns" conceptually
+
+THE SOLUTION: CONCEPTUAL REASONING
+
+The LLM is instructed to think in THREE STEPS:
+
+STEP 1: UNDERSTAND THE ICP
+- What domain/category? (beauty, food, fitness, finance, etc.)
+- What underlying concerns? (aging, health, saving money, etc.)
+- What type of person? (high spender, budget-conscious, etc.)
+
+STEP 2: UNDERSTAND THE LEAD
+- What domain are they in?
+- What are their underlying concerns?
+- What type of person are they?
+
+STEP 3: SCORE CONCEPTUALLY
+- Think about underlying domains, not surface words
+- Would a product for the ICP plausibly interest this lead?
+- Are they in the same "world" of concerns?
+
+EXAMPLE:
+ICP: "Aging people discovering wrinkles, willing to spend a lot"
+Lead: "Concerned about fine lines. $150/month on skincare. Looking for anti-aging."
+
+Conceptual analysis:
+- ICP domain: beauty/skincare, aging concerns, high spenders
+- Lead domain: beauty/skincare, aging concerns (fine lines = wrinkles), high spender
+- Result: HIGH FIT (same world, same concerns, same spending type)
 
 WHY THIS IS RELIABLE:
-- Structured schema constrains output format
-- null values allowed for unmentioned criteria
-- Weights must sum to 100 (model instructed)
-- Weights reflect emphasis in description
-- JSON parsing validates output
-
-LOCATION: search.ts, lines 703-741
+- LLM excels at understanding conceptual relationships
+- No hardcoded examples needed - works across all domains
+- Explicit instruction to think conceptually, not literally
+- Still constrained by structured output (0-100 score + reason)
 
 --------------------------------------------------------------------------------
-5.2 LEAD ATTRIBUTE EXTRACTION (Phase 2)
+5.3 SCORING METHODOLOGY
 --------------------------------------------------------------------------------
 
-PURPOSE: Extract same structured attributes from each lead's profile
+SINGLE LLM CALL PER LEAD:
+- Input: ICP description + Lead profile
+- Output: JSON with 5 dimension scores (0-100 each) + reasons
+- Each dimension scored independently
 
-IMPLEMENTATION:
-- Input: Lead's insight/profile text
-- Output: Structured JSON matching ICP schema
+DIMENSION SCORING RULES:
 
-OUTPUT SCHEMA:
-{
-  "age": number|null,
-  "incomeLevel": "low"|"medium"|"high"|"very_high"|null,
-  "monthlySpend": number|null,
-  "interests": ["category1", ...],
-  "expressedIntent": true|false,
-  "location": "urban"|"suburban"|"rural"|null
-}
+FIT (0-100):
+- 100 = Perfect domain match, same world of concerns
+- 50-80 = Related domain, some overlap
+- 0 = Completely different worlds (piano vs beverages)
 
-EXTRACTION RULES:
-- Only extract EXPLICITLY stated information
-- expressedIntent true ONLY for "I want", "I plan to", etc.
-- Income inferred from spending patterns (e.g., $150/mo skincare = medium-high)
-- null for anything not mentioned
+BUDGET (0-100):
+- Score based on match between lead's spending and ICP expectations
+- High-spender ICP + high-spending lead = high score
+- Budget-friendly ICP + budget-conscious lead = high score
+- 0 = No spending information mentioned
 
-WHY THIS IS RELIABLE:
-- Same strict extraction rules as lead qualification
-- Structured output validates format
-- null values prevent fabrication
-- Income inference rule is explicit and bounded
+NEED (0-100):
+- Look for: "concerned about", "want to", "looking for", "struggling with"
+- Need must be relevant to what ICP is solving
+- 0 = No problems or desires expressed
 
-LOCATION: search.ts, lines 760-793
+URGENCY (0-100):
+- High: "looking for", "need", "planning to buy"
+- Medium: "interested in", "considering"
+- Low/Zero: Just describing habits
+
+ENGAGEMENT (0-100):
+- High: Multiple specific preferences, quantities, frequencies
+- Medium: Some details
+- Low: Vague statements
+
+STRICT RULES IN PROMPT:
+- Score based ONLY on explicitly stated information
+- 0 means NO relevant information (not "unknown")
+- Think conceptually about FIT, strictly about other dimensions
+- No hallucination or inference beyond what's stated
 
 --------------------------------------------------------------------------------
-5.3 DETERMINISTIC SCORING ALGORITHM (Phase 3)
+5.4 FINAL SCORE CALCULATION
 --------------------------------------------------------------------------------
 
-PURPOSE: Calculate transparent, consistent scores using extracted data
+The final score uses FIT as a GATE to prevent high scores for irrelevant leads.
 
-IMPLEMENTATION: Pure TypeScript code (NO AI)
+FORMULA:
+```
+fitGate = fit^1.5  (exponential curve)
+rawTotal = fit_points + budget_points + need_points + urgency_points + engagement_points
+finalScore = rawTotal × fitGate
+```
 
-SCORING RULES BY CATEGORY:
+WHY EXPONENTIAL FIT GATE:
+- Low FIT should crush the entire score
+- A lead with perfect demographics but wrong domain is worthless
+- Prevents gaming by having high scores in non-FIT dimensions
 
-AGE:
-- In range: 100% of weight
-- Outside range: Partial score based on distance from midpoint
-- Unknown: 50% of weight
-- No requirement: 100% of weight
+EXAMPLES:
+| Lead Type              | FIT | Other Dims | fitGate | Final |
+|------------------------|-----|------------|---------|-------|
+| Perfect match          | 90% | 80 pts     | 0.85    | ~68   |
+| Good match             | 70% | 70 pts     | 0.59    | ~41   |
+| Wrong domain           | 20% | 90 pts     | 0.09    | ~8    |
 
-INCOME:
-- Meets or exceeds level: 100% of weight
-- Below level: Partial based on level difference (33% per level)
-- Unknown: 50% of weight
-- No requirement: 100% of weight
+--------------------------------------------------------------------------------
+5.5 ANTI-HALLUCINATION MEASURES
+--------------------------------------------------------------------------------
 
-BUDGET:
-- Meets minimum: 100% of weight
-- Below minimum: Proportional (spend/minimum ratio)
-- Unknown: 50% of weight
-- No requirement: 100% of weight
+1. EXPLICIT SCORING RULES:
+   - "Score based ONLY on what is explicitly stated"
+   - "0 means NO relevant information, not unknown"
+   - "Do NOT give benefit of the doubt"
 
-INTERESTS:
-- Match ratio: (matches / required) * weight
-- Fuzzy matching: substring inclusion both directions
-- No requirement: 100% of weight
+2. STRUCTURED OUTPUT:
+   - JSON format validated by parsing
+   - Each dimension requires a score AND a reason
+   - Reasons must explain the conceptual connection
 
-INTENT:
-- If required and expressed: 100% of weight
-- If required but not expressed: 0%
-- If not required but expressed: 100% (bonus)
-- If not required and not expressed: 50%
+3. CONCEPTUAL BUT BOUNDED:
+   - FIT uses conceptual matching (LLM strength)
+   - Other dimensions use explicit criteria (reduces hallucination)
+   - "Be generous with FIT if domains overlap, strict with other dimensions"
 
-REASON GENERATION:
-- Strong points: categories with ≥80% score
-- Weak points: categories with <50% score
-- Summary format: "Strong: X, Y. Weak: Z."
+4. NO HARDCODED EXAMPLES:
+   - Prompt teaches conceptual thinking, not specific mappings
+   - Works across all domains without maintenance
+   - LLM applies same reasoning to any ICP/lead combination
 
-WHY THIS IS RELIABLE:
-- NO AI in scoring calculation
-- Pure mathematical formulas
-- Every score is auditable
-- Breakdown shows exactly why each score was given
-- Consistent: same inputs always produce same outputs
-
-LOCATION: search.ts, lines 797-937
+LOCATION: search.ts, lines 691-880
 
 ================================================================================
 6. QUALITY ASSURANCE SUMMARY
@@ -441,32 +480,38 @@ STRATEGY 1: CONSTRAINED OUTPUTS
 - Short text for snippets (150 chars)
 - Structured JSON for data extraction
 - 2-3 sentence limits for responses
+- Each score requires a reason/explanation
 
 STRATEGY 2: EXPLICIT RULES
 - "ONLY include explicitly stated facts"
 - "DO NOT guess or infer"
 - "Questions are curiosity, NOT interest"
-- Clear examples in prompts
+- "0 means NO information, not unknown"
+- "Score based ONLY on what is explicitly stated"
 
-STRATEGY 3: SEPARATION OF CONCERNS
-- AI extracts structure from unstructured text
-- Code performs calculations and scoring
-- No "vibes-based" scoring
+STRATEGY 3: CONCEPTUAL WHERE APPROPRIATE
+- FIT dimension uses conceptual/semantic matching (LLM strength)
+- Other dimensions use strict explicit criteria
+- No hardcoded domain-specific examples
+- LLM taught to think conceptually, not literally
 
-STRATEGY 4: GRACEFUL DEGRADATION
-- null values for unknown data
-- Empty outputs acceptable
-- 50% scores for unknown fields (neutral, not penalty)
+STRATEGY 4: MATHEMATICAL GATING
+- FIT acts as exponential gate on final score
+- Low FIT crushes score regardless of other dimensions
+- Prevents irrelevant leads from scoring high
+- Formula: finalScore = rawTotal × fit^1.5
 
 STRATEGY 5: TRANSPARENCY
-- Every score has a breakdown
-- Every category shows points/max
-- Reasons cite specific strong/weak areas
+- Every score has a 5-dimension breakdown
+- Every dimension shows points/max + reason
+- Reasons explain the conceptual connection
+- Strong/weak points summarized
 
 STRATEGY 6: VALIDATION LAYERS
 - JSON parsing validates structure
 - Regex validates embedded questions
 - Code deduplicates results
+- Each dimension independently scored
 
 --------------------------------------------------------------------------------
 RELIABILITY CONCLUSION
@@ -474,17 +519,20 @@ RELIABILITY CONCLUSION
 
 The AI integrations in Afterlink are designed with the following principles:
 
-1. AI does understanding, code does scoring
-2. Strict rules prevent hallucination
-3. Structured outputs enable validation
-4. Transparency enables auditing
-5. Conservative defaults (50% for unknown, empty for no data)
+1. Use AI for conceptual understanding (FIT matching)
+2. Use strict rules for factual extraction (other dimensions)
+3. Mathematical formulas ensure consistency (exponential gating)
+4. Structured outputs enable validation
+5. Transparency enables auditing (reasons for every score)
+6. Zero scores for missing data (not 50%, not "unknown")
 
 These design choices ensure that:
 - Lead data is factual, not inferred
-- Scores are consistent and explainable
+- FIT is evaluated conceptually (works across all domains)
+- Other dimensions are evaluated strictly (no hallucination)
+- Irrelevant leads are filtered out by exponential FIT gate
 - Business decisions can be justified with specific criteria
-- The system degrades gracefully when information is missing
+- The system works for any ICP without hardcoded mappings
 
 ================================================================================
 END OF DOCUMENTATION
