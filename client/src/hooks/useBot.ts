@@ -19,6 +19,17 @@ export interface ConversationMessage {
   content: string;
 }
 
+export interface UserInsight {
+  id: number;
+  oduserId: string;
+  articleTitle: string;
+  category: string;
+  insight: string;
+  rawMessage: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 type ChatClient = Awaited<ReturnType<typeof import("@botpress/chat").Client.connect>>;
 
 // Generate or retrieve persistent user ID
@@ -84,7 +95,7 @@ export function useBot() {
           if (skipTexts.includes(text)) continue;
           if (text.startsWith("SEARCH:") || text.startsWith("ARTICLE:") || text.startsWith("GET_ARTICLE:")) continue;
 
-          if (text.length > 10) {
+          if (text.length >= 2) {
             return text;
           }
         }
@@ -245,5 +256,31 @@ export function useBot() {
     }
   }, [getClient, waitForBotResponse]);
 
-  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, isReady };
+  const getInsights = useCallback(async (): Promise<UserInsight[]> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: "GET_INSIGHTS",
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      const parsed = JSON.parse(response) as { insights?: UserInsight[]; error?: string };
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+      return parsed.insights || [];
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      throw new Error("Failed to fetch insights");
+    }
+  }, [getClient, waitForBotResponse]);
+
+  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, getInsights, isReady };
 }

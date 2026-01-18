@@ -55,7 +55,14 @@ export default new Conversation({
           logger.info("[search] Relevance check result:", relevanceCheck);
 
           try {
-            const parsedIds = JSON.parse(relevanceCheck) as number[];
+            // Clean up common AI response issues
+            let cleanJson = relevanceCheck.trim();
+            cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+            const arrayMatch = cleanJson.match(/\[[\s\S]*\]/);
+            if (arrayMatch) {
+              cleanJson = arrayMatch[0];
+            }
+            const parsedIds = JSON.parse(cleanJson) as number[];
             // Deduplicate IDs
             const relevantIds = [...new Set(parsedIds)];
             logger.info("[search] Deduplicated relevant IDs:", relevantIds);
@@ -88,10 +95,19 @@ export default new Conversation({
           );
 
           try {
-            newSuggestions = JSON.parse(newSuggestionsJson);
+            // Clean up common AI response issues (markdown code blocks, extra text)
+            let cleanJson = newSuggestionsJson.trim();
+            // Remove markdown code blocks
+            cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+            // Try to extract JSON array if there's extra text
+            const arrayMatch = cleanJson.match(/\[[\s\S]*\]/);
+            if (arrayMatch) {
+              cleanJson = arrayMatch[0];
+            }
+            newSuggestions = JSON.parse(cleanJson);
             logger.info("[search] Generated new suggestions:", newSuggestions.length);
-          } catch {
-            logger.error("[search] Could not parse new suggestions");
+          } catch (e) {
+            logger.error("[search] Could not parse new suggestions:", newSuggestionsJson);
           }
         }
 
@@ -392,6 +408,26 @@ export default new Conversation({
         await conversation.send({
           type: "text",
           payload: { text: JSON.stringify({ error: "Failed to generate response" }) },
+        });
+      }
+      return;
+    }
+
+    // Handle GET_INSIGHTS request (for business dashboard)
+    if (text === "GET_INSIGHTS") {
+      try {
+        const { rows } = await userInsightsTable.findRows({});
+        logger.info("[search] Fetched insights:", rows.length);
+
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ insights: rows }) },
+        });
+      } catch (error) {
+        logger.error("[search] Error fetching insights:", error);
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ error: "Failed to fetch insights" }) },
         });
       }
       return;
