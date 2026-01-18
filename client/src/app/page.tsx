@@ -7,7 +7,6 @@ import { useBot, Article } from "@/hooks/useBot";
 export default function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Article[] | null>(null);
-  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { search, clearArticles } = useBot();
@@ -21,13 +20,11 @@ export default function Home() {
     setError(null);
 
     try {
-      const { articles, debug } = await search(query);
+      const articles = await search(query);
       setResults(articles);
-      setDebugInfo(debug || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
       setResults(null);
-      setDebugInfo(null);
     } finally {
       setIsLoading(false);
     }
@@ -54,7 +51,6 @@ export default function Home() {
               const result = await clearArticles();
               alert(result.message || (result.success ? "Cleared!" : "Failed"));
               setResults(null);
-              setDebugInfo(null);
             }}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
@@ -86,13 +82,6 @@ export default function Home() {
 
         {error && (
           <p className="text-red-600 mb-8">{error}</p>
-        )}
-
-        {debugInfo && (
-          <div className="mb-8 p-4 bg-gray-100 rounded text-sm font-mono">
-            <div className="font-bold mb-2">DEBUG INFO:</div>
-            <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
-          </div>
         )}
 
         {results && results.length > 0 && (

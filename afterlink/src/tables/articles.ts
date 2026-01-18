@@ -7,5 +7,6 @@ export const articlesTable = new Table({
     slug: z.string(),
     snippet: z.string(),
     content: z.string(),
+    questions: z.string(), // JSON string of integrated questions
   },
 });

@@ -8,10 +8,17 @@ export interface Article {
   snippet: string;
 }
 
+export interface IntegratedQuestion {
+  id: string;
+  text: string;
+  afterParagraph: number;
+}
+
 export interface FullArticle {
   id: number;
   title: string;
   content: string;
+  questions: IntegratedQuestion[];
 }
 
 type ChatClient = Awaited<ReturnType<typeof import("@botpress/chat").Client.connect>>;
@@ -77,7 +84,7 @@ export function useBot() {
     throw new Error("Timeout waiting for bot response");
   }, []);
 
-  const search = useCallback(async (query: string): Promise<{ articles: Article[]; debug?: Record<string, unknown> }> => {
+  const search = useCallback(async (query: string): Promise<Article[]> => {
     const client = await getClient();
     const { conversation } = await client.createConversation({});
 
@@ -92,21 +99,15 @@ export function useBot() {
     const response = await waitForBotResponse(client, conversation.id, message.id, ["Searching..."]);
 
     try {
-      const parsed = JSON.parse(response);
-      // Handle new format with debug info
-      if (parsed.results && Array.isArray(parsed.results)) {
-        console.log("[useBot] DEBUG INFO:", parsed.debug);
-        return { articles: parsed.results, debug: parsed.debug };
-      }
-      // Handle old format (array directly)
-      if (Array.isArray(parsed)) {
-        return { articles: parsed };
+      const articles = JSON.parse(response) as Article[];
+      if (Array.isArray(articles)) {
+        return articles;
       }
     } catch {
       throw new Error("Failed to parse search results");
     }
 
-    return { articles: [] };
+    return [];
   }, [getClient, waitForBotResponse]);
 
   const getArticle = useCallback(async (title: string): Promise<FullArticle> => {
@@ -122,20 +123,25 @@ export function useBot() {
     });
 
     const response = await waitForBotResponse(client, conversation.id, message.id, ["Generating article..."]);
+    console.log("[useBot] Raw article response:", response);
 
     try {
-      const parsed = JSON.parse(response) as { id: number; content: string };
+      const parsed = JSON.parse(response) as { id: number; content: string; questions?: IntegratedQuestion[] };
+      console.log("[useBot] Parsed article:", { id: parsed.id, questionsCount: parsed.questions?.length });
       return {
         id: parsed.id,
         title,
         content: parsed.content,
+        questions: parsed.questions || [],
       };
-    } catch {
+    } catch (e) {
+      console.error("[useBot] Failed to parse article response:", e);
       // Fallback: response might be plain text
       return {
         id: 0,
         title,
         content: response,
+        questions: [],
       };
     }
   }, [getClient, waitForBotResponse]);
@@ -155,7 +161,7 @@ export function useBot() {
     const response = await waitForBotResponse(client, conversation.id, message.id, []);
 
     try {
-      const parsed = JSON.parse(response) as { id: number; title: string; content: string; error?: string };
+      const parsed = JSON.parse(response) as { id: number; title: string; content: string; questions?: IntegratedQuestion[]; error?: string };
       if (parsed.error) {
         throw new Error(parsed.error);
       }
@@ -163,10 +169,43 @@ export function useBot() {
         id: parsed.id,
         title: parsed.title,
         content: parsed.content,
+        questions: parsed.questions || [],
       };
     } catch (e) {
       if (e instanceof Error) throw e;
       throw new Error("Failed to parse article");
+    }
+  }, [getClient, waitForBotResponse]);
+
+  const askArticleQuestion = useCallback(async (
+    articleTitle: string,
+    articleContent: string,
+    question: string
+  ): Promise<string> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const payload = JSON.stringify({ articleTitle, articleContent, question });
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: `ARTICLE_QUESTION: ${payload}`,
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      const parsed = JSON.parse(response) as { response?: string; error?: string };
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+      return parsed.response || "Sorry, I couldn't generate a response.";
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      throw new Error("Failed to get response");
     }
   }, [getClient, waitForBotResponse]);
 
@@ -191,5 +230,5 @@ export function useBot() {
     }
   }, [getClient, waitForBotResponse]);
 
-  return { search, getArticle, getStoredArticle, clearArticles, isReady };
+  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, isReady };
 }

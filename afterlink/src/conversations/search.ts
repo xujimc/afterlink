@@ -99,20 +99,9 @@ export default new Conversation({
           ...newSuggestions.map((a) => ({ title: a.title, snippet: a.snippet })),
         ];
 
-        // DEBUG: Include diagnostic info
-        const debug = {
-          existingCount: existingArticles.length,
-          existingIds: existingArticles.map(a => a.id),
-          relevantExistingCount: relevantExisting.length,
-          relevantExistingIds: relevantExisting.map(a => a.id),
-          newSuggestionsCount: newSuggestions.length,
-          finalResultsCount: results.length,
-          finalResultsIds: results.map(r => r.id ?? 'none'),
-        };
-
         await conversation.send({
           type: "text",
-          payload: { text: JSON.stringify({ results, debug }) },
+          payload: { text: JSON.stringify(results) },
         });
       } catch (error) {
         logger.error("[search] Error:", error);
@@ -140,9 +129,40 @@ export default new Conversation({
           `Write a short, informative article (3-4 paragraphs) about: "${title}".
            Write in a professional, engaging style similar to Medium articles.
            Do not include the title in your response, just the article body.
-           Separate paragraphs with double newlines.`,
-          { length: 800 }
+           Separate paragraphs with double newlines.
+           Keep it concise - around 250 words.`,
+          { length: 500 }
         );
+
+        // Count paragraphs
+        const paragraphs = articleContent.split("\n\n").filter(p => p.trim());
+        const numParagraphs = paragraphs.length;
+
+        // Generate integrated questions based on the article
+        const questionsJson = await adk.zai.text(
+          `Based on this article about "${title}", generate 2 thoughtful questions a reader would naturally wonder about.
+
+           Article:
+           ${articleContent}
+
+           Requirements:
+           - Natural follow-up questions (not generic)
+           - Specific to the content
+
+           Return ONLY a JSON array:
+           [{"id": "q1", "text": "Short question?", "afterParagraph": 1}, {"id": "q2", "text": "Another question?", "afterParagraph": 2}]
+
+           afterParagraph: 1 to ${Math.max(1, numParagraphs - 1)}
+           Return ONLY valid JSON.`,
+          { length: 200 }
+        );
+
+        let questions: Array<{ id: string; text: string; afterParagraph: number }> = [];
+        try {
+          questions = JSON.parse(questionsJson);
+        } catch {
+          logger.error("[search] Could not parse questions, using empty array");
+        }
 
         // Generate a snippet
         const snippet = await adk.zai.text(
@@ -161,19 +181,21 @@ export default new Conversation({
             slug,
             snippet: snippet.trim(),
             content: articleContent,
+            questions: JSON.stringify(questions),
           }],
         });
 
         const savedRow = rows[0];
         logger.info("[search] Saved article with id:", savedRow?.id);
 
-        // Return content with the article ID
+        // Return content with the article ID and questions
         await conversation.send({
           type: "text",
           payload: {
             text: JSON.stringify({
               id: savedRow?.id,
               content: articleContent,
+              questions,
             }),
           },
         });
@@ -207,6 +229,16 @@ export default new Conversation({
           return;
         }
 
+        // Parse questions from stored JSON
+        let questions: Array<{ id: string; text: string; afterParagraph: number }> = [];
+        try {
+          if (row.questions) {
+            questions = JSON.parse(row.questions);
+          }
+        } catch {
+          // Ignore parse errors, use empty array
+        }
+
         await conversation.send({
           type: "text",
           payload: {
@@ -214,6 +246,7 @@ export default new Conversation({
               id: row.id,
               title: row.title,
               content: row.content,
+              questions,
             }),
           },
         });
@@ -222,6 +255,53 @@ export default new Conversation({
         await conversation.send({
           type: "text",
           payload: { text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        });
+      }
+      return;
+    }
+
+    // Handle ARTICLE_QUESTION requests (chat about article questions)
+    if (text.startsWith("ARTICLE_QUESTION:")) {
+      const jsonStr = text.replace("ARTICLE_QUESTION:", "").trim();
+
+      try {
+        const { articleTitle, articleContent, question } = JSON.parse(jsonStr) as {
+          articleTitle: string;
+          articleContent: string;
+          question: string;
+        };
+
+        // Generate a response based on the article context and question
+        const response = await adk.zai.text(
+          `You are a helpful assistant discussing an article with a reader.
+
+           Article Title: "${articleTitle}"
+
+           Article Content:
+           ${articleContent}
+
+           The reader is asking: "${question}"
+
+           Provide a helpful, informative response that:
+           - Directly addresses their question
+           - Uses information from the article when relevant
+           - Adds additional context or insights if helpful
+           - Is conversational and engaging
+           - Is concise (2-3 paragraphs max)
+
+           Respond naturally as if having a conversation.`,
+          { length: 400 }
+        );
+
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ response }) },
+        });
+      } catch (error) {
+        logger.error("[search] Error in ARTICLE_QUESTION:", error);
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ error: "Failed to generate response" }) },
         });
       }
       return;
