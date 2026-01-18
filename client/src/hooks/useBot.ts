@@ -3,12 +3,13 @@
 import { useRef, useCallback, useEffect, useState } from "react";
 
 export interface Article {
+  id?: number; // Present if stored article, absent if new suggestion
   title: string;
-  url: string;
   snippet: string;
 }
 
 export interface FullArticle {
+  id: number;
   title: string;
   content: string;
 }
@@ -55,10 +56,7 @@ export function useBot() {
 
       const { messages } = await client.listMessages({ conversationId });
 
-      console.log(`[useBot] Attempt ${attempt + 1}, messages:`, messages.length);
-
       for (const msg of messages) {
-        // Skip the user's own message
         if (msg.id === userMessageId) continue;
 
         const payload = msg.payload as { type?: string; text?: string };
@@ -66,15 +64,10 @@ export function useBot() {
         if (payload?.type === "text" && payload?.text) {
           const text = payload.text.trim();
 
-          // Skip specified texts (like "Searching...", "Generating article...")
           if (skipTexts.includes(text)) continue;
+          if (text.startsWith("SEARCH:") || text.startsWith("ARTICLE:") || text.startsWith("GET_ARTICLE:")) continue;
 
-          // Skip if it starts with our command prefixes (user messages)
-          if (text.startsWith("SEARCH:") || text.startsWith("ARTICLE:")) continue;
-
-          // Return substantial text response
-          if (text.length > 20) {
-            console.log("[useBot] Found bot response:", text.substring(0, 100) + "...");
+          if (text.length > 10) {
             return text;
           }
         }
@@ -84,7 +77,7 @@ export function useBot() {
     throw new Error("Timeout waiting for bot response");
   }, []);
 
-  const search = useCallback(async (query: string): Promise<Article[]> => {
+  const search = useCallback(async (query: string): Promise<{ articles: Article[]; debug?: Record<string, unknown> }> => {
     const client = await getClient();
     const { conversation } = await client.createConversation({});
 
@@ -99,15 +92,21 @@ export function useBot() {
     const response = await waitForBotResponse(client, conversation.id, message.id, ["Searching..."]);
 
     try {
-      const articles = JSON.parse(response) as Article[];
-      if (Array.isArray(articles)) {
-        return articles;
+      const parsed = JSON.parse(response);
+      // Handle new format with debug info
+      if (parsed.results && Array.isArray(parsed.results)) {
+        console.log("[useBot] DEBUG INFO:", parsed.debug);
+        return { articles: parsed.results, debug: parsed.debug };
+      }
+      // Handle old format (array directly)
+      if (Array.isArray(parsed)) {
+        return { articles: parsed };
       }
     } catch {
       throw new Error("Failed to parse search results");
     }
 
-    return [];
+    return { articles: [] };
   }, [getClient, waitForBotResponse]);
 
   const getArticle = useCallback(async (title: string): Promise<FullArticle> => {
@@ -124,11 +123,73 @@ export function useBot() {
 
     const response = await waitForBotResponse(client, conversation.id, message.id, ["Generating article..."]);
 
-    return {
-      title,
-      content: response,
-    };
+    try {
+      const parsed = JSON.parse(response) as { id: number; content: string };
+      return {
+        id: parsed.id,
+        title,
+        content: parsed.content,
+      };
+    } catch {
+      // Fallback: response might be plain text
+      return {
+        id: 0,
+        title,
+        content: response,
+      };
+    }
   }, [getClient, waitForBotResponse]);
 
-  return { search, getArticle, isReady };
+  const getStoredArticle = useCallback(async (id: number): Promise<FullArticle> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: `GET_ARTICLE: ${id}`,
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      const parsed = JSON.parse(response) as { id: number; title: string; content: string; error?: string };
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+      return {
+        id: parsed.id,
+        title: parsed.title,
+        content: parsed.content,
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      throw new Error("Failed to parse article");
+    }
+  }, [getClient, waitForBotResponse]);
+
+  const clearArticles = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: "CLEAR_ARTICLES",
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      return JSON.parse(response);
+    } catch {
+      return { success: false, message: "Failed to parse response" };
+    }
+  }, [getClient, waitForBotResponse]);
+
+  return { search, getArticle, getStoredArticle, clearArticles, isReady };
 }

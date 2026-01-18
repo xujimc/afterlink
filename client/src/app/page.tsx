@@ -7,9 +7,10 @@ import { useBot, Article } from "@/hooks/useBot";
 export default function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Article[] | null>(null);
+  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { search } = useBot();
+  const { search, clearArticles } = useBot();
   const router = useRouter();
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -20,26 +21,45 @@ export default function Home() {
     setError(null);
 
     try {
-      const articles = await search(query);
+      const { articles, debug } = await search(query);
       setResults(articles);
+      setDebugInfo(debug || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
       setResults(null);
+      setDebugInfo(null);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleArticleClick = (article: Article) => {
-    const slug = encodeURIComponent(article.title.toLowerCase().replace(/\s+/g, "-"));
-    router.push(`/article/${slug}?title=${encodeURIComponent(article.title)}`);
+    if (article.id) {
+      // Stored article - fetch by ID
+      router.push(`/article/${article.id}`);
+    } else {
+      // New suggestion - generate on demand
+      const slug = encodeURIComponent(article.title.toLowerCase().replace(/\s+/g, "-"));
+      router.push(`/article/${slug}?title=${encodeURIComponent(article.title)}`);
+    }
   };
 
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b border-[var(--border)] py-4">
-        <div className="max-w-3xl mx-auto px-6">
+        <div className="max-w-3xl mx-auto px-6 flex justify-between items-center">
           <h1 className="text-xl font-semibold tracking-tight">Afterlink</h1>
+          <button
+            onClick={async () => {
+              const result = await clearArticles();
+              alert(result.message || (result.success ? "Cleared!" : "Failed"));
+              setResults(null);
+              setDebugInfo(null);
+            }}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            Clear DB
+          </button>
         </div>
       </header>
 
@@ -68,13 +88,31 @@ export default function Home() {
           <p className="text-red-600 mb-8">{error}</p>
         )}
 
+        {debugInfo && (
+          <div className="mb-8 p-4 bg-gray-100 rounded text-sm font-mono">
+            <div className="font-bold mb-2">DEBUG INFO:</div>
+            <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
+
         {results && results.length > 0 && (
           <div className="space-y-8">
             {results.map((result, index) => (
-              <article key={index} className="group cursor-pointer" onClick={() => handleArticleClick(result)}>
-                <h2 className="text-xl font-semibold mb-2 group-hover:underline">
-                  {result.title}
-                </h2>
+              <article
+                key={result.id || index}
+                className="group cursor-pointer"
+                onClick={() => handleArticleClick(result)}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="text-xl font-semibold group-hover:underline">
+                    {result.title}
+                  </h2>
+                  {result.id && (
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                      saved
+                    </span>
+                  )}
+                </div>
                 <p className="text-[var(--muted)] leading-relaxed">
                   {result.snippet}
                 </p>

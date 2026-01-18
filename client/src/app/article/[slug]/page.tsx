@@ -1,32 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import { useSearchParams, useRouter, useParams } from "next/navigation";
 import { useBot, FullArticle } from "@/hooks/useBot";
 
 export default function ArticlePage() {
+  const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const title = searchParams.get("title") || "";
-  const { getArticle } = useBot();
+  const slug = params.slug as string;
+  const title = searchParams.get("title");
+  const { getArticle, getStoredArticle } = useBot();
 
   const [article, setArticle] = useState<FullArticle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Prevent double execution in React Strict Mode
+  const hasStartedRef = useRef(false);
+
   useEffect(() => {
-    if (!title) {
-      setError("No article title provided");
-      setIsLoading(false);
+    // Skip if already started (React Strict Mode double-invocation)
+    if (hasStartedRef.current) {
       return;
     }
+    hasStartedRef.current = true;
 
     const loadArticle = async () => {
       try {
-        console.log("[ArticlePage] Fetching article:", title);
-        const fullArticle = await getArticle(title);
-        console.log("[ArticlePage] Received article:", fullArticle);
-        setArticle(fullArticle);
+        // Check if slug is a numeric ID (stored article) or a title slug (new article)
+        const maybeId = parseInt(slug, 10);
+        const isStoredArticle = !isNaN(maybeId) && !title;
+
+        if (isStoredArticle) {
+          console.log("[ArticlePage] Fetching stored article by ID:", maybeId);
+          const fullArticle = await getStoredArticle(maybeId);
+          setArticle(fullArticle);
+        } else if (title) {
+          console.log("[ArticlePage] Generating new article:", title);
+          const fullArticle = await getArticle(title);
+          setArticle(fullArticle);
+        } else {
+          setError("No article specified");
+        }
       } catch (err) {
         console.error("[ArticlePage] Error:", err);
         setError(err instanceof Error ? err.message : "Failed to load article");
@@ -36,7 +52,7 @@ export default function ArticlePage() {
     };
 
     loadArticle();
-  }, [title]); // removed getArticle to prevent re-fetching
+  }, [slug, title]);
 
   return (
     <div className="min-h-screen bg-white">
@@ -53,7 +69,9 @@ export default function ArticlePage() {
 
       <main className="max-w-3xl mx-auto px-6 py-12">
         {isLoading && (
-          <div className="text-[var(--muted)]">Generating article...</div>
+          <div className="text-[var(--muted)]">
+            {title ? "Generating article..." : "Loading article..."}
+          </div>
         )}
 
         {error && (
