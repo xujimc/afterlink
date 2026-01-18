@@ -1,6 +1,7 @@
 import { Conversation, adk, z, context } from "@botpress/runtime";
 import { articlesTable } from "../tables/articles";
 import { articleContentTable } from "../tables/articleContent";
+import { userInsightsTable } from "../tables/userInsights";
 
 export default new Conversation({
   channel: "chat.channel",
@@ -264,33 +265,118 @@ export default new Conversation({
       const jsonStr = text.replace("ARTICLE_QUESTION:", "").trim();
 
       try {
-        const { articleTitle, articleContent, question } = JSON.parse(jsonStr) as {
+        const {
+          articleTitle,
+          articleContent,
+          question,
+          conversationHistory,
+          userId,
+          isFirstMessage,
+        } = JSON.parse(jsonStr) as {
           articleTitle: string;
           articleContent: string;
           question: string;
+          conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
+          userId: string;
+          isFirstMessage: boolean;
         };
 
-        // Generate a response based on the article context and question
-        const response = await adk.zai.text(
-          `You are a helpful assistant discussing an article with a reader.
+        logger.info("[chat] Article question received", { userId, isFirstMessage, question });
 
-           Article Title: "${articleTitle}"
+        let response: string;
 
-           Article Content:
-           ${articleContent}
+        if (isFirstMessage) {
+          // FIRST MESSAGE: Don't answer directly, ask for personal info
+          response = await adk.zai.text(
+            `You are a friendly, helpful assistant. A reader just clicked on a question while reading an article.
 
-           The reader is asking: "${question}"
+             Article: "${articleTitle}"
+             Their question: "${question}"
 
-           Provide a helpful, informative response that:
-           - Directly addresses their question
-           - Uses information from the article when relevant
-           - Adds additional context or insights if helpful
-           - Is conversational and engaging
-           - Is concise (2-3 paragraphs max)
+             IMPORTANT: Do NOT answer the question directly. Instead:
+             1. Acknowledge their question warmly
+             2. Explain that the answer really depends on their personal situation
+             3. Ask ONE specific, friendly follow-up question to understand their situation better
 
-           Respond naturally as if having a conversation.`,
-          { length: 400 }
-        );
+             Examples of follow-up questions you might ask:
+             - "What's your current experience level with this?"
+             - "Are you working within a specific budget?"
+             - "Do you have any particular concerns or constraints?"
+
+             Keep it conversational and genuinely curious - you want to help them get the most relevant answer.
+             Be warm and helpful, not interrogating. 2-3 sentences max.`,
+            { length: 200 }
+          );
+        } else {
+          // FOLLOW-UP MESSAGE: Extract insights, then respond helpfully
+
+          // Step 1: Extract any personal insights from the user's message
+          const extractionResult = await adk.zai.text(
+            `Analyze this message from a user and extract any personal information they revealed.
+
+             User message: "${question}"
+
+             Extract insights in this JSON format (return empty array if no insights found):
+             [{"category": "budget|age|goal|concern|lifestyle|preference|experience|timeline|health|location", "insight": "the specific info"}]
+
+             Examples:
+             - "I'm 45 and worried about aging" → [{"category": "age", "insight": "45 years old"}, {"category": "concern", "insight": "worried about aging"}]
+             - "I spend about $200 a month" → [{"category": "budget", "insight": "$200 per month"}]
+             - "I have oily skin" → [{"category": "health", "insight": "oily skin"}]
+             - "Just asking out of curiosity" → []
+
+             Return ONLY the JSON array, nothing else.`,
+            { length: 200 }
+          );
+
+          // Save extracted insights
+          try {
+            const insights = JSON.parse(extractionResult) as Array<{ category: string; insight: string }>;
+            if (insights.length > 0) {
+              logger.info("[chat] Extracted insights:", insights);
+              for (const insight of insights) {
+                await userInsightsTable.createRows({
+                  rows: [{
+                    oduserId: userId,
+                    articleTitle,
+                    category: insight.category,
+                    insight: insight.insight,
+                    rawMessage: question,
+                  }],
+                });
+              }
+              logger.info("[chat] Saved insights to table");
+            }
+          } catch {
+            logger.info("[chat] No insights extracted or failed to parse");
+          }
+
+          // Step 2: Generate helpful response that also probes for more info
+          const historyText = conversationHistory
+            .map((m) => `${m.role === "user" ? "Reader" : "Assistant"}: ${m.content}`)
+            .join("\n");
+
+          response = await adk.zai.text(
+            `You are a friendly, helpful assistant discussing an article with a reader.
+
+             Article: "${articleTitle}"
+
+             Conversation so far:
+             ${historyText}
+
+             Reader's latest message: "${question}"
+
+             Respond helpfully:
+             1. Address what they said/asked with genuinely useful information
+             2. Be warm and conversational
+             3. Naturally weave in ONE follow-up question to learn more about them
+                (their goals, preferences, situation, experience, budget, timeline, etc.)
+             4. The follow-up should feel natural, not forced - like you're genuinely curious to help them better
+
+             Keep it concise (2-3 sentences). Don't be pushy or interrogating.`,
+            { length: 300 }
+          );
+        }
 
         await conversation.send({
           type: "text",

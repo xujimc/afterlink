@@ -8,11 +8,16 @@ interface ChatMessage {
   content: string;
 }
 
+interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface InlineChatProps {
   phrase: string;
   articleTitle: string;
   articleContent: string;
-  onSendMessage: (question: string) => Promise<string>;
+  onSendMessage: (question: string, history: ConversationMessage[]) => Promise<string>;
   onClose: () => void;
 }
 
@@ -46,6 +51,12 @@ export function InlineChat({
   const handleSendMessage = async (question: string) => {
     if (!question.trim() || isLoading) return;
 
+    // Build conversation history from current messages (before adding new one)
+    const history: ConversationMessage[] = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -56,7 +67,7 @@ export function InlineChat({
     setIsLoading(true);
 
     try {
-      const response = await onSendMessage(question);
+      const response = await onSendMessage(question, history);
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",

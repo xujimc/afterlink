@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter, useParams } from "next/navigation";
-import { useBot, FullArticle } from "@/hooks/useBot";
+import { useBot, FullArticle, ConversationMessage } from "@/hooks/useBot";
 import { InlineChat } from "@/components/InlineChat";
 
 // Parse content and extract question markers
@@ -98,11 +98,14 @@ export default function ArticlePage() {
     loadArticle();
   }, [slug, title]);
 
-  const handleSendMessage = useCallback(async (question: string): Promise<string> => {
+  const handleSendMessage = useCallback(async (
+    question: string,
+    history: ConversationMessage[]
+  ): Promise<string> => {
     if (!article) throw new Error("No article loaded");
     // Remove markers from content before sending to bot
     const cleanContent = article.content.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
-    return askArticleQuestion(article.title, cleanContent, question);
+    return askArticleQuestion(article.title, cleanContent, question, history);
   }, [article, askArticleQuestion]);
 
   const handleQuestionClick = (questionId: string) => {

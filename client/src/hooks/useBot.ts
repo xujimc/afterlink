@@ -14,7 +14,24 @@ export interface FullArticle {
   content: string; // Contains {{Q:phrase}} markers for inline questions
 }
 
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 type ChatClient = Awaited<ReturnType<typeof import("@botpress/chat").Client.connect>>;
+
+// Generate or retrieve persistent user ID
+function getUserId(): string {
+  if (typeof window === "undefined") return "server";
+
+  let userId = localStorage.getItem("afterlink_user_id");
+  if (!userId) {
+    userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    localStorage.setItem("afterlink_user_id", userId);
+  }
+  return userId;
+}
 
 export function useBot() {
   const clientRef = useRef<ChatClient | null>(null);
@@ -167,12 +184,23 @@ export function useBot() {
   const askArticleQuestion = useCallback(async (
     articleTitle: string,
     articleContent: string,
-    question: string
+    question: string,
+    conversationHistory: ConversationMessage[]
   ): Promise<string> => {
     const client = await getClient();
     const { conversation } = await client.createConversation({});
 
-    const payload = JSON.stringify({ articleTitle, articleContent, question });
+    const userId = getUserId();
+    const isFirstMessage = conversationHistory.length === 0;
+
+    const payload = JSON.stringify({
+      articleTitle,
+      articleContent,
+      question,
+      conversationHistory,
+      userId,
+      isFirstMessage,
+    });
 
     const { message } = await client.createMessage({
       conversationId: conversation.id,
