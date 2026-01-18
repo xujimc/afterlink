@@ -2,8 +2,52 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter, useParams } from "next/navigation";
-import { useBot, FullArticle, IntegratedQuestion } from "@/hooks/useBot";
-import { ChatPanel } from "@/components/ChatPanel";
+import { useBot, FullArticle } from "@/hooks/useBot";
+import { InlineChat } from "@/components/InlineChat";
+
+// Parse content and extract question markers
+interface ContentPart {
+  type: "text" | "question";
+  content: string;
+  id?: string;
+}
+
+function parseContent(content: string): ContentPart[] {
+  const parts: ContentPart[] = [];
+  const regex = /\{\{Q:([^}]+)\}\}/g;
+  let lastIndex = 0;
+  let match;
+  let questionIndex = 0;
+
+  while ((match = regex.exec(content)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push({
+        type: "text",
+        content: content.slice(lastIndex, match.index),
+      });
+    }
+
+    // Add the question
+    parts.push({
+      type: "question",
+      content: match[1],
+      id: `q-${questionIndex++}`,
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < content.length) {
+    parts.push({
+      type: "text",
+      content: content.slice(lastIndex),
+    });
+  }
+
+  return parts;
+}
 
 export default function ArticlePage() {
   const params = useParams();
@@ -17,15 +61,13 @@ export default function ArticlePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Chat panel state
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [selectedQuestion, setSelectedQuestion] = useState<string | null>(null);
+  // Track which question is currently expanded
+  const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
 
   // Prevent double execution in React Strict Mode
   const hasStartedRef = useRef(false);
 
   useEffect(() => {
-    // Skip if already started (React Strict Mode double-invocation)
     if (hasStartedRef.current) {
       return;
     }
@@ -33,23 +75,14 @@ export default function ArticlePage() {
 
     const loadArticle = async () => {
       try {
-        // Check if slug is a numeric ID (stored article) or a title slug (new article)
         const maybeId = parseInt(slug, 10);
         const isStoredArticle = !isNaN(maybeId) && !title;
 
         if (isStoredArticle) {
-          console.log("[ArticlePage] Fetching stored article by ID:", maybeId);
           const fullArticle = await getStoredArticle(maybeId);
           setArticle(fullArticle);
         } else if (title) {
-          console.log("[ArticlePage] Generating new article:", title);
           const fullArticle = await getArticle(title);
-          console.log("[ArticlePage] Received article:", {
-            id: fullArticle.id,
-            title: fullArticle.title,
-            contentLength: fullArticle.content.length,
-            questions: fullArticle.questions,
-          });
           setArticle(fullArticle);
         } else {
           setError("No article specified");
@@ -65,64 +98,77 @@ export default function ArticlePage() {
     loadArticle();
   }, [slug, title]);
 
-  const handleQuestionClick = (question: IntegratedQuestion) => {
-    setSelectedQuestion(question.text);
-    setIsChatOpen(true);
-  };
-
   const handleSendMessage = useCallback(async (question: string): Promise<string> => {
     if (!article) throw new Error("No article loaded");
-    return askArticleQuestion(article.title, article.content, question);
+    // Remove markers from content before sending to bot
+    const cleanContent = article.content.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
+    return askArticleQuestion(article.title, cleanContent, question);
   }, [article, askArticleQuestion]);
 
-  // Render article content with integrated questions
+  const handleQuestionClick = (questionId: string) => {
+    setExpandedQuestionId(expandedQuestionId === questionId ? null : questionId);
+  };
+
+  // Render article content with inline questions
   const renderArticleContent = () => {
     if (!article) return null;
 
     const paragraphs = article.content.split("\n\n").filter(p => p.trim());
-    const questions = article.questions || [];
 
-    // Create a map of questions by their position (after which paragraph)
-    const questionsByPosition: Record<number, IntegratedQuestion[]> = {};
-    questions.forEach((q) => {
-      const pos = q.afterParagraph;
-      if (!questionsByPosition[pos]) {
-        questionsByPosition[pos] = [];
-      }
-      questionsByPosition[pos].push(q);
-    });
+    return paragraphs.map((paragraph, pIndex) => {
+      const parts = parseContent(paragraph);
 
-    const elements: React.ReactNode[] = [];
+      return (
+        <div key={`p-${pIndex}`} className="mb-6">
+          <p className="text-lg leading-relaxed text-[var(--foreground)]">
+            {parts.map((part, partIndex) => {
+              if (part.type === "text") {
+                return <span key={partIndex}>{part.content}</span>;
+              }
 
-    paragraphs.forEach((paragraph, index) => {
-      // Add paragraph
-      elements.push(
-        <p key={`p-${index}`} className="text-lg leading-relaxed mb-6 text-[var(--foreground)]">
-          {paragraph}
-        </p>
+              const questionId = `${pIndex}-${part.id}`;
+              const isExpanded = expandedQuestionId === questionId;
+
+              return (
+                <span
+                  key={partIndex}
+                  onClick={() => handleQuestionClick(questionId)}
+                  className={`
+                    cursor-pointer transition-all duration-200
+                    border-b-2 border-[#FFC017]
+                    ${isExpanded
+                      ? "bg-[#FFC017]/30 px-1 rounded"
+                      : "hover:bg-[#FFC017]/20 hover:px-1 hover:rounded"
+                    }
+                  `}
+                  title="Click to explore this topic"
+                >
+                  {part.content}
+                </span>
+              );
+            })}
+          </p>
+
+          {/* Render inline chat if a question in this paragraph is expanded */}
+          {parts.map((part) => {
+            if (part.type !== "question") return null;
+            const questionId = `${pIndex}-${part.id}`;
+            if (expandedQuestionId !== questionId) return null;
+
+            return (
+              <InlineChat
+                key={`chat-${questionId}`}
+                phrase={part.content}
+                articleTitle={article.title}
+                articleContent={article.content}
+                onSendMessage={handleSendMessage}
+                onClose={() => setExpandedQuestionId(null)}
+              />
+            );
+          })}
+        </div>
       );
-
-      // Add questions that should appear after this paragraph (1-indexed)
-      const questionsAfter = questionsByPosition[index + 1];
-      if (questionsAfter) {
-        questionsAfter.forEach((question) => {
-          elements.push(
-            <div
-              key={question.id}
-              onClick={() => handleQuestionClick(question)}
-              className="my-6 py-3 px-4 border-l-4 border-[#FFC017] bg-[#FFC017]/10 cursor-pointer hover:bg-[#FFC017]/20 transition-colors rounded-r"
-            >
-              <p className="text-base italic text-gray-700 underline decoration-[#FFC017] decoration-2 underline-offset-2">
-                {question.text}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Click to explore this question</p>
-            </div>
-          );
-        });
-      }
     });
-
-    return elements;
   };
 
   return (
@@ -160,18 +206,6 @@ export default function ArticlePage() {
           </article>
         )}
       </main>
-
-      {/* Chat Panel */}
-      {article && (
-        <ChatPanel
-          isOpen={isChatOpen}
-          onClose={() => setIsChatOpen(false)}
-          articleTitle={article.title}
-          articleContent={article.content}
-          initialQuestion={selectedQuestion}
-          onSendMessage={handleSendMessage}
-        />
-      )}
     </div>
   );
 }

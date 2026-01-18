@@ -124,47 +124,29 @@ export default new Conversation({
       });
 
       try {
-        // Generate the article content
+        // Generate the article content with naturally embedded question markers
         const articleContent = await adk.zai.text(
           `Write a short, informative article (3-4 paragraphs) about: "${title}".
            Write in a professional, engaging style similar to Medium articles.
            Do not include the title in your response, just the article body.
            Separate paragraphs with double newlines.
-           Keep it concise - around 250 words.`,
-          { length: 500 }
+           Keep it concise - around 250 words.
+
+           IMPORTANT: Naturally embed 2-3 curiosity-provoking phrases that readers might want to explore further.
+           Mark these phrases with this exact syntax: {{Q:the phrase here}}
+
+           Example: "The technology behind {{Q:neural networks}} has evolved significantly, leading to {{Q:unexpected applications in healthcare}}."
+
+           The marked phrases should:
+           - Flow naturally within sentences (not interrupt reading)
+           - Be specific concepts or claims readers might want to learn more about
+           - Be 2-6 words each
+           - NOT be full questions, just intriguing phrases/concepts`,
+          { length: 600 }
         );
 
-        // Count paragraphs
-        const paragraphs = articleContent.split("\n\n").filter(p => p.trim());
-        const numParagraphs = paragraphs.length;
-
-        // Generate integrated questions based on the article
-        const questionsJson = await adk.zai.text(
-          `Based on this article about "${title}", generate 2 thoughtful questions a reader would naturally wonder about.
-
-           Article:
-           ${articleContent}
-
-           Requirements:
-           - Natural follow-up questions (not generic)
-           - Specific to the content
-
-           Return ONLY a JSON array:
-           [{"id": "q1", "text": "Short question?", "afterParagraph": 1}, {"id": "q2", "text": "Another question?", "afterParagraph": 2}]
-
-           afterParagraph: 1 to ${Math.max(1, numParagraphs - 1)}
-           Return ONLY valid JSON.`,
-          { length: 200 }
-        );
-
-        let questions: Array<{ id: string; text: string; afterParagraph: number }> = [];
-        try {
-          questions = JSON.parse(questionsJson);
-        } catch {
-          logger.error("[search] Could not parse questions, using empty array");
-        }
-
-        // Generate a snippet
+        // Generate a snippet (remove any markers from snippet source)
+        const cleanContentForSnippet = articleContent.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
         const snippet = await adk.zai.text(
           `Write a one-sentence summary (max 150 chars) for an article titled "${title}".
            Return only the summary, no quotes or extra text.`,
@@ -174,28 +156,27 @@ export default new Conversation({
         // Create slug from title
         const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-        // Save to table
+        // Save to table (content includes {{Q:...}} markers)
         const { rows } = await articlesTable.createRows({
           rows: [{
             title,
             slug,
             snippet: snippet.trim(),
             content: articleContent,
-            questions: JSON.stringify(questions),
+            questions: "[]", // Questions are now embedded in content
           }],
         });
 
         const savedRow = rows[0];
         logger.info("[search] Saved article with id:", savedRow?.id);
 
-        // Return content with the article ID and questions
+        // Return content with embedded question markers
         await conversation.send({
           type: "text",
           payload: {
             text: JSON.stringify({
               id: savedRow?.id,
               content: articleContent,
-              questions,
             }),
           },
         });
@@ -229,16 +210,6 @@ export default new Conversation({
           return;
         }
 
-        // Parse questions from stored JSON
-        let questions: Array<{ id: string; text: string; afterParagraph: number }> = [];
-        try {
-          if (row.questions) {
-            questions = JSON.parse(row.questions);
-          }
-        } catch {
-          // Ignore parse errors, use empty array
-        }
-
         await conversation.send({
           type: "text",
           payload: {
@@ -246,7 +217,6 @@ export default new Conversation({
               id: row.id,
               title: row.title,
               content: row.content,
-              questions,
             }),
           },
         });

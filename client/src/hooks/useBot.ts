@@ -8,17 +8,10 @@ export interface Article {
   snippet: string;
 }
 
-export interface IntegratedQuestion {
-  id: string;
-  text: string;
-  afterParagraph: number;
-}
-
 export interface FullArticle {
   id: number;
   title: string;
-  content: string;
-  questions: IntegratedQuestion[];
+  content: string; // Contains {{Q:phrase}} markers for inline questions
 }
 
 type ChatClient = Awaited<ReturnType<typeof import("@botpress/chat").Client.connect>>;
@@ -123,25 +116,20 @@ export function useBot() {
     });
 
     const response = await waitForBotResponse(client, conversation.id, message.id, ["Generating article..."]);
-    console.log("[useBot] Raw article response:", response);
 
     try {
-      const parsed = JSON.parse(response) as { id: number; content: string; questions?: IntegratedQuestion[] };
-      console.log("[useBot] Parsed article:", { id: parsed.id, questionsCount: parsed.questions?.length });
+      const parsed = JSON.parse(response) as { id: number; content: string };
       return {
         id: parsed.id,
         title,
         content: parsed.content,
-        questions: parsed.questions || [],
       };
-    } catch (e) {
-      console.error("[useBot] Failed to parse article response:", e);
+    } catch {
       // Fallback: response might be plain text
       return {
         id: 0,
         title,
         content: response,
-        questions: [],
       };
     }
   }, [getClient, waitForBotResponse]);
@@ -161,7 +149,7 @@ export function useBot() {
     const response = await waitForBotResponse(client, conversation.id, message.id, []);
 
     try {
-      const parsed = JSON.parse(response) as { id: number; title: string; content: string; questions?: IntegratedQuestion[]; error?: string };
+      const parsed = JSON.parse(response) as { id: number; title: string; content: string; error?: string };
       if (parsed.error) {
         throw new Error(parsed.error);
       }
@@ -169,7 +157,6 @@ export function useBot() {
         id: parsed.id,
         title: parsed.title,
         content: parsed.content,
-        questions: parsed.questions || [],
       };
     } catch (e) {
       if (e instanceof Error) throw e;
