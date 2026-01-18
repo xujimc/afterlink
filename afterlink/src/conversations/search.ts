@@ -124,25 +124,72 @@ export default new Conversation({
       });
 
       try {
-        // Generate the article content with naturally embedded question markers
+        // Generate the article content with naturally embedded reader questions
         const articleContent = await adk.zai.text(
-          `Write a short, informative article (3-4 paragraphs) about: "${title}".
-           Write in a professional, engaging style similar to Medium articles.
+          `Write a short, captivating article (3-4 paragraphs) about: "${title}".
            Do not include the title in your response, just the article body.
            Separate paragraphs with double newlines.
            Keep it concise - around 250 words.
 
-           IMPORTANT: Naturally embed 2-3 curiosity-provoking phrases that readers might want to explore further.
-           Mark these phrases with this exact syntax: {{Q:the phrase here}}
+           WRITING STYLE - Use these techniques to hook and keep readers:
 
-           Example: "The technology behind {{Q:neural networks}} has evolved significantly, leading to {{Q:unexpected applications in healthcare}}."
+           1. OPENING HOOK: Start with ONE of these:
+              - A surprising statistic or fact
+              - A bold, contrarian statement
+              - A "what if" scenario
+              - A relatable problem or frustration
 
-           The marked phrases should:
-           - Flow naturally within sentences (not interrupt reading)
-           - Be specific concepts or claims readers might want to learn more about
-           - Be 2-6 words each
-           - NOT be full questions, just intriguing phrases/concepts`,
-          { length: 600 }
+           2. CONVERSATIONAL TONE:
+              - Write like you're talking to a smart friend
+              - Use "you" and "your" frequently
+              - Short punchy sentences mixed with longer ones
+              - Occasional one-word sentences for impact. Like this.
+
+           3. KEEP THEM READING:
+              - Drop hints about what's coming ("Here's where it gets interesting...")
+              - Use contrast (old way vs new way, expectation vs reality)
+              - Include specific numbers and details (not "many people" but "73% of users")
+              - Challenge common assumptions
+
+           4. POWER WORDS: Use emotional language - "surprising", "secret", "mistake", "actually", "hidden", "finally"
+
+           EMBEDDED QUESTIONS: Embed 2-3 reader questions using: {{Q:question here}}
+
+           CRITICAL RULES FOR QUESTIONS:
+
+           1. QUESTIONS MUST REQUIRE PERSONAL CONTEXT TO ANSWER
+              The article cannot answer these because it doesn't know the reader's:
+              - Age, health conditions, skin type, body type
+              - Budget, financial situation
+              - Schedule, lifestyle, living situation
+              - Experience level, skill level
+              - Personal goals, preferences
+              - Location, climate, environment
+
+           2. THE ARTICLE MUST NOT ANSWER THE QUESTION
+              Do NOT place a question if the next sentence answers it.
+              The question should remain OPEN - only answerable through personalized conversation.
+
+           BADExample (article answers the question):
+              "Retinol is powerful. {{Q:Is it safe for my age?}} Generally, anyone over 25 can use it safely."
+              ❌ The next sentence answers the question!
+
+           GOOD Examples (requires personal context, not answered):
+              "Retinol speeds up cell turnover dramatically. {{Q:But is my skin ready for something this strong?}} The results can be transformative when used correctly."
+              ✓ Article continues without answering - only the reader knows their skin's condition.
+
+              "High-intensity training burns 3x more calories. {{Q:Could this be too intense for my fitness level?}} Many athletes swear by this method."
+              ✓ Only the reader knows their fitness level.
+
+              "Premium ingredients cost significantly more. {{Q:Is it worth it for my budget right now?}} The difference in quality is noticeable."
+              ✓ Only the reader knows their financial situation.
+
+           Questions MUST:
+           - Require the reader's PERSONAL circumstances to answer
+           - Use FIRST PERSON ("I", "my", "me")
+           - Start with: "But is my...", "Should I with my...", "What if my...", "Could this work for my...", "Is my... ready for..."
+           - NOT be answerable by general information in the article`,
+          { length: 700 }
         );
 
         // Generate a snippet (remove any markers from snippet source)

@@ -34,12 +34,12 @@ export function InlineChat({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Send initial question about the phrase
+  // Send the reader's question directly
   useEffect(() => {
     if (!initialSentRef.current) {
       initialSentRef.current = true;
-      const initialQuestion = `Tell me more about "${phrase}"`;
-      handleSendMessage(initialQuestion);
+      // The phrase IS the question, send it directly
+      handleSendMessage(phrase);
     }
   }, [phrase]);
 
@@ -84,51 +84,52 @@ export function InlineChat({
   };
 
   return (
-    <div className="my-4 border border-gray-200 rounded-lg bg-gray-50 overflow-hidden shadow-sm">
+    <div style={{ margin: "1.5rem 0" }} className="border border-gray-200 rounded-lg bg-gray-50 overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-[#FFC017] rounded-full" />
-          <span className="text-sm font-medium text-gray-700">
-            Exploring: <span className="italic">"{phrase}"</span>
+      <div style={{ padding: "1rem 1.25rem" }} className="flex items-center justify-between bg-white border-b border-gray-200">
+        <div style={{ gap: "0.5rem" }} className="flex items-center">
+          <div style={{ width: "0.5rem", height: "0.5rem" }} className="bg-[#FFC017] rounded-full" />
+          <span style={{ fontSize: "1rem" }} className="font-medium text-gray-700">
+            Your question
           </span>
         </div>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-600 transition-colors"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg style={{ width: "1.5rem", height: "1.5rem" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       </div>
 
       {/* Messages */}
-      <div className="max-h-64 overflow-y-auto p-4 space-y-3">
+      <div style={{ maxHeight: "28rem", padding: "1.25rem", gap: "1rem" }} className="overflow-y-auto flex flex-col">
         {messages.map((message) => (
           <div
             key={message.id}
             className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2 ${
+              style={{ padding: "1rem 1.25rem", borderRadius: "1rem" }}
+              className={`max-w-[85%] ${
                 message.role === "user"
                   ? "bg-gray-900 text-white"
                   : "bg-white text-gray-900 border border-gray-200"
               }`}
             >
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <p style={{ fontSize: "1.125rem", lineHeight: "1.75" }} className="whitespace-pre-wrap">{message.content}</p>
             </div>
           </div>
         ))}
 
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white border border-gray-200 rounded-2xl px-4 py-2">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            <div style={{ padding: "1rem 1.25rem", borderRadius: "1rem" }} className="bg-white border border-gray-200">
+              <div style={{ gap: "0.25rem" }} className="flex">
+                <div style={{ width: "0.5rem", height: "0.5rem" }} className="bg-gray-400 rounded-full animate-bounce" />
+                <div style={{ width: "0.5rem", height: "0.5rem", animationDelay: "150ms" }} className="bg-gray-400 rounded-full animate-bounce" />
+                <div style={{ width: "0.5rem", height: "0.5rem", animationDelay: "300ms" }} className="bg-gray-400 rounded-full animate-bounce" />
               </div>
             </div>
           </div>
@@ -138,20 +139,22 @@ export function InlineChat({
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-200">
-        <div className="flex gap-2">
+      <form onSubmit={handleSubmit} style={{ padding: "1rem 1.25rem" }} className="bg-white border-t border-gray-200">
+        <div style={{ gap: "0.75rem" }} className="flex">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Ask a follow-up question..."
             disabled={isLoading}
-            className="flex-1 px-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:border-gray-400 disabled:opacity-50"
+            style={{ padding: "0.75rem 1.25rem", fontSize: "1rem", borderRadius: "2rem" }}
+            className="flex-1 border border-gray-200 focus:outline-none focus:border-gray-400 disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={isLoading || !inputValue.trim()}
-            className="px-4 py-2 bg-gray-900 text-white rounded-full text-sm hover:bg-black transition-colors disabled:opacity-50"
+            style={{ padding: "0.75rem 1.5rem", fontSize: "1rem", borderRadius: "2rem" }}
+            className="bg-gray-900 text-white hover:bg-black transition-colors disabled:opacity-50"
           >
             Send
           </button>
