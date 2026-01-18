@@ -19,12 +19,43 @@ export default new Conversation({
       const query = text.replace("SEARCH:", "").trim();
       logger.info("[search] Search query:", { query });
 
+      // Check if query is comprehensible
+      if (query.length < 2) {
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify([]) },
+        });
+        return;
+      }
+
       await conversation.send({
         type: "text",
         payload: { text: "Searching..." },
       });
 
       try {
+        // Validate if the query is a meaningful search term
+        const validationResult = await adk.zai.text(
+          `Is this a comprehensible search query that someone might use to find articles or information?
+           Query: "${query}"
+
+           Answer with ONLY "yes" or "no". Nothing else.`,
+          { length: 10 }
+        );
+
+        const isValid = validationResult.trim().toLowerCase().startsWith("yes");
+        logger.info("[search] Query validation:", { query, isValid, validationResult });
+
+        if (!isValid) {
+          // Easter egg: suggest mental health article for gibberish
+          await conversation.send({
+            type: "text",
+            payload: { text: JSON.stringify([
+              { title: "Signs You Might Need a Mental Health Day", snippet: "Feeling overwhelmed? Here's how to recognize when your mind needs a break." }
+            ]) },
+          });
+          return;
+        }
         // Fetch existing articles from table
         const { rows: existingArticles } = await articlesTable.findRows({});
         logger.info("[search] Found existing articles:", existingArticles.length);

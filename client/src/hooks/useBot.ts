@@ -120,11 +120,21 @@ export function useBot() {
     const response = await waitForBotResponse(client, conversation.id, message.id, ["Searching..."]);
 
     try {
-      const articles = JSON.parse(response) as Article[];
-      if (Array.isArray(articles)) {
-        return articles;
+      const parsed = JSON.parse(response);
+
+      // Check if it's an error response
+      if (parsed.error) {
+        throw new Error(parsed.error);
       }
-    } catch {
+
+      // Check if it's an array of articles
+      if (Array.isArray(parsed)) {
+        return parsed as Article[];
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message !== "Failed to parse search results") {
+        throw e;
+      }
       throw new Error("Failed to parse search results");
     }
 
