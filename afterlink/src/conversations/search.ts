@@ -389,54 +389,90 @@ export default new Conversation({
         } else {
           // FOLLOW-UP MESSAGE: Extract insights, then respond helpfully
 
-          // Step 1: Extract ACTIONABLE lead qualification data from the user's message
+          // Step 1: Fetch existing notes for this session to combine with new info
+          let existingNote = "";
+          let existingRowId: number | null = null;
+          try {
+            const { rows: existingRows } = await userInsightsTable.findRows({
+              filter: { oduserId: { $eq: userId } },
+            });
+            if (existingRows.length > 0) {
+              existingNote = existingRows[0].insight || "";
+              existingRowId = existingRows[0].id;
+              logger.info("[chat] Found existing note for session:", existingRowId);
+            }
+          } catch (e) {
+            logger.info("[chat] Could not fetch existing notes");
+          }
+
+          // Step 2: Extract and combine lead qualification notes
+          // Build full history of what the USER said (not the assistant)
+          const userMessages = conversationHistory
+            .filter((m) => m.role === "user")
+            .map((m) => m.content);
+          userMessages.push(question); // Add current message
+
           const extractionResult = await adk.zai.text(
-            `Extract SPECIFIC, ACTIONABLE information from this message that a business could use for lead qualification.
+            `You are helping a salesman prepare for outreach. Write a factual profile of this lead.
 
-             User message: "${question}"
+             EVERYTHING THE LEAD SAID:
+             ${userMessages.map((msg, i) => `${i + 1}. "${msg}"`).join("\n")}
 
-             PRIORITY DATA (capture these with exact numbers/details):
-             - Specific price points: "$5-8", "under $50", "willing to spend $100"
-             - Purchase frequency: "weekly", "twice a month", "daily"
-             - Product/service interests: what specific things they want
-             - Demographics: age, location, family status
-             - Pain points: specific problems they're trying to solve
-             - Timeline: "looking to buy soon", "next month", "researching"
+             ${existingNote ? `PREVIOUS NOTES:\n"${existingNote}"` : ""}
 
-             Format: [{"category": "spending|frequency|interest|demographic|pain_point|timeline", "insight": "SPECIFIC detail with numbers"}]
+             STRICT RULES:
+             - ONLY include facts the lead EXPLICITLY stated
+             - DO NOT guess, infer, or assume anything
+             - DO NOT estimate age, income, or any demographic unless they said it
+             - If they said "I spend $5-8" write exactly that, don't add interpretations like "price-conscious"
 
-             Examples:
-             - "I usually spend $5-8 on bubble tea" → [{"category": "spending", "insight": "$5-8 per bubble tea"}, {"category": "interest", "insight": "bubble tea"}]
-             - "I buy skincare products every week" → [{"category": "frequency", "insight": "weekly purchases"}, {"category": "interest", "insight": "skincare products"}]
-             - "I'm 32 and looking for anti-aging stuff" → [{"category": "demographic", "insight": "32 years old"}, {"category": "interest", "insight": "anti-aging products"}]
-             - "Just curious" → []
+             Return JSON:
+             {
+               "theme": "food|beauty|fitness|tech|finance|health|education|travel|home|fashion|other",
+               "note": "Only explicit facts. Example: 'Spends $5-8 on bubble tea. Goes twice a week. Prefers less sweet.'"
+             }
 
-             IMPORTANT: Capture EXACT numbers and specifics. "$5-8" is better than "low budget".
-
-             Return ONLY the JSON array.`,
+             If no explicit personal facts were shared, return empty note.`,
             { length: 300 }
           );
 
-          // Save extracted insights
+          // Save or update lead qualification note
           try {
-            const insights = JSON.parse(extractionResult) as Array<{ category: string; insight: string }>;
-            if (insights.length > 0) {
-              logger.info("[chat] Extracted insights:", insights);
-              for (const insight of insights) {
+            let cleanJson = extractionResult.trim();
+            cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+
+            const extracted = JSON.parse(cleanJson) as { theme: string; note: string };
+
+            if (extracted.note && extracted.note.trim()) {
+              logger.info("[chat] Extracted/combined lead note:", extracted);
+
+              if (existingRowId) {
+                // Update existing row with combined note
+                await userInsightsTable.updateRows({
+                  rows: [{
+                    id: existingRowId,
+                    category: extracted.theme || "other",
+                    insight: extracted.note,
+                    rawMessage: question, // Update to latest message
+                  }],
+                });
+                logger.info("[chat] Updated existing lead note");
+              } else {
+                // Create new row
                 await userInsightsTable.createRows({
                   rows: [{
                     oduserId: userId,
                     articleTitle,
-                    category: insight.category,
-                    insight: insight.insight,
+                    category: extracted.theme || "other",
+                    insight: extracted.note,
                     rawMessage: question,
                   }],
                 });
+                logger.info("[chat] Created new lead note");
               }
-              logger.info("[chat] Saved insights to table");
             }
-          } catch {
-            logger.info("[chat] No insights extracted or failed to parse");
+          } catch (e) {
+            logger.info("[chat] No lead note extracted or failed to parse:", extractionResult);
           }
 
           // Step 2: Generate helpful response

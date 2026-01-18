@@ -101,12 +101,27 @@ export default function ArticlePage() {
     loadArticle();
   }, [slug, title]);
 
-  const createMessageHandler = useCallback((paragraphContext: string) => {
+  const createMessageHandler = useCallback((paragraphIndex: number) => {
     return async (question: string, history: ConversationMessage[]): Promise<string> => {
       if (!article) throw new Error("No article loaded");
-      // Remove markers from paragraph context
-      const cleanContext = paragraphContext.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
-      return askArticleQuestion(article.title, cleanContext, question, history, sessionIdRef.current);
+
+      // Build full article context with the selected paragraph marked
+      const paragraphs = article.content.split("\n\n").filter(p => p.trim());
+      const contextParts: string[] = [];
+
+      paragraphs.forEach((p, i) => {
+        const cleanP = p.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
+        if (i === paragraphIndex) {
+          contextParts.push(`[SELECTED PARAGRAPH - where the user clicked their question]\n${cleanP}`);
+        } else if (i < paragraphIndex) {
+          contextParts.push(`[BEFORE]\n${cleanP}`);
+        } else {
+          contextParts.push(`[AFTER]\n${cleanP}`);
+        }
+      });
+
+      const fullContext = contextParts.join("\n\n");
+      return askArticleQuestion(article.title, fullContext, question, history, sessionIdRef.current);
     };
   }, [article, askArticleQuestion]);
 
@@ -165,8 +180,7 @@ export default function ArticlePage() {
                 key={`chat-${questionId}`}
                 phrase={part.content}
                 articleTitle={article.title}
-                paragraphContext={paragraph}
-                onSendMessage={createMessageHandler(paragraph)}
+                onSendMessage={createMessageHandler(pIndex)}
                 onClose={() => setExpandedQuestionId(null)}
               />
             );

@@ -39,23 +39,22 @@ export default function BusinessDashboard() {
     return acc;
   }, {} as Record<string, UserInsight[]>);
 
-  // Get category color
-  const getCategoryColor = (category: string) => {
+  // Get theme color
+  const getThemeColor = (theme: string) => {
     const colors: Record<string, string> = {
-      spending: "bg-green-100 text-green-800",
-      frequency: "bg-blue-100 text-blue-800",
-      interest: "bg-purple-100 text-purple-800",
-      demographic: "bg-orange-100 text-orange-800",
-      pain_point: "bg-red-100 text-red-800",
-      timeline: "bg-yellow-100 text-yellow-800",
-      // Legacy categories
-      budget: "bg-green-100 text-green-800",
-      age: "bg-orange-100 text-orange-800",
-      goal: "bg-purple-100 text-purple-800",
-      concern: "bg-red-100 text-red-800",
-      preference: "bg-pink-100 text-pink-800",
+      food: "bg-orange-100 text-orange-800",
+      beauty: "bg-pink-100 text-pink-800",
+      fitness: "bg-green-100 text-green-800",
+      tech: "bg-blue-100 text-blue-800",
+      finance: "bg-emerald-100 text-emerald-800",
+      health: "bg-red-100 text-red-800",
+      education: "bg-indigo-100 text-indigo-800",
+      travel: "bg-cyan-100 text-cyan-800",
+      home: "bg-amber-100 text-amber-800",
+      fashion: "bg-purple-100 text-purple-800",
+      other: "bg-gray-100 text-gray-800",
     };
-    return colors[category] || "bg-gray-100 text-gray-800";
+    return colors[theme] || "bg-gray-100 text-gray-800";
   };
 
   return (
@@ -115,16 +114,13 @@ export default function BusinessDashboard() {
                   {userInsights.map((insight) => (
                     <div key={insight.id} className="px-4 py-3">
                       <div className="flex items-start gap-3">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getCategoryColor(insight.category)}`}>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getThemeColor(insight.category)}`}>
                           {insight.category}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-[var(--foreground)]">{insight.insight}</p>
-                          <p className="text-sm text-[var(--muted)] mt-1 truncate" title={insight.rawMessage}>
-                            "{insight.rawMessage}"
-                          </p>
+                          <p className="text-[var(--foreground)]">{insight.insight}</p>
                           <p className="text-xs text-[var(--muted)] mt-1">
-                            From article: <span className="font-medium">{insight.articleTitle}</span>
+                            Article: <span className="font-medium">{insight.articleTitle}</span>
                           </p>
                         </div>
                         <span className="text-xs text-[var(--muted)] whitespace-nowrap">
