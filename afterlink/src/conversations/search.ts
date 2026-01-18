@@ -175,31 +175,37 @@ export default new Conversation({
       try {
         // Generate the article content with naturally embedded reader questions
         const articleContent = await adk.zai.text(
-          `Write an article (5-7 paragraphs, 500-600 words) about: "${title}".
+        `Write an article (5-7 paragraphs, 500-600 words) about: "${title}".
 
-           CRITICAL FORMAT REQUIREMENT:
-           You MUST embed exactly 2-3 questions using this exact format: {{Q:question text here}}
-           Example: "This technique works fast. {{Q:But would it work for my situation?}} The results speak for themselves."
+        EMBEDDED QUESTIONS - THE KEY CONCEPT:
+        Given the title, create 2-5 questions using {{Q:question text}} format.
+        These questions are NOT random - they are points where a reader would naturally think:
+        "This is interesting, but what about MY specific situation?"
+        Write the rest of the article around these questions, but don't make it obvious that the questions are important.
 
-           BEFORE WRITING:
-           Think of 2-3 personal questions a reader might have about "${title}" that depend on their:
-           age, budget, health, experience level, lifestyle, or goals.
+        The question EXTENDS or SPECIFIES the content that came just before it.
 
-           QUESTION RULES:
-           - Questions must use first person ("I", "my", "me")
-           - Questions must require personal context to answer
-           - The article must NOT answer the question in the following sentence
-           - Format: {{Q:But is my... / Should I with my... / Could this work for my...}}
+        QUESTION RULES:
+        - Questions must DIRECTLY relate to the sentences before them
+        - Questions ask for PERSONALIZATION SPECIFICATION of the general info just presented
+        - Use first person ("I", "my", "me")
+        - The article must NOT answer the question afterward
+        - Format: {{Q:question here}}
 
-           WRITING STYLE:
-           - Conversational tone, like talking to a smart friend
-           - Start with a hook (surprising fact, bold statement, or relatable problem)
-           - Use "you" and "your" frequently
-           - Mix short punchy sentences with longer ones
+        EXAMPLES OF GOOD QUESTIONS PLACEMENT:
+        - Content: "This approach works best with consistent practice." → {{Q:What if my schedule doesn't allow daily practice?}} because then we can naturally ask about their daily practice
+        - Content: "The average cost runs $50-100 per month." → {{Q:Is there an option that fits my budget?}} because then we can naturally ask about their budget
+        - Content: "Studies show this is most effective for beginners." → {{Q:Would this still work given my experience level?}} because then we can naturall ask about their experience level
 
-           Do not include the title. Separate paragraphs with double newlines.`,
-          { length: 1500 }
-        );
+        WRITING STYLE:
+        - Conversational tone, like talking to a smart friend
+        - Start with a hook (surprising fact, bold statement, or relatable problem)
+        - Use "you" and "your" frequently
+        - Mix short punchy sentences with longer ones
+
+        Do not include the title. Separate paragraphs with double newlines.`,
+        { length: 1500 }
+      );
 
         // Generate a snippet (remove any markers from snippet source)
         const cleanContentForSnippet = articleContent.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
@@ -314,14 +320,14 @@ export default new Conversation({
       try {
         const {
           articleTitle,
-          articleContent,
+          paragraphContext,
           question,
           conversationHistory,
           userId,
           isFirstMessage,
         } = JSON.parse(jsonStr) as {
           articleTitle: string;
-          articleContent: string;
+          paragraphContext: string;
           question: string;
           conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
           userId: string;
@@ -330,48 +336,85 @@ export default new Conversation({
 
         logger.info("[chat] Article question received", { userId, isFirstMessage, question });
 
+        // Fetch insights from THIS SESSION only (same article page load)
+        let sessionMemory = "";
+        try {
+          const { rows: sessionInsights } = await userInsightsTable.findRows({
+            filter: { oduserId: { $eq: userId } },
+          });
+          if (sessionInsights.length > 0) {
+            const insightsSummary = sessionInsights
+              .map((i) => `- ${i.category}: ${i.insight}`)
+              .join("\n");
+            sessionMemory = `\n\nWHAT THE USER HAS SHARED IN THIS SESSION:\n${insightsSummary}\n\nUse this to personalize your response. Don't ask about things they already told you.`;
+            logger.info("[chat] Loaded session memory:", sessionInsights.length, "insights");
+          }
+        } catch (e) {
+          logger.info("[chat] Could not load session insights");
+        }
+
         let response: string;
 
         if (isFirstMessage) {
-          // FIRST MESSAGE: Don't answer directly, ask for personal info
+          // FIRST MESSAGE: Don't answer directly, ask for the specific info hinted by the question
           response = await adk.zai.text(
-            `You are a friendly, helpful assistant. A reader just clicked on a question while reading an article.
+            `You are a friendly, helpful assistant. A reader clicked on a question while reading an article.
 
              Article: "${articleTitle}"
-             Their question: "${question}"
 
-             IMPORTANT: Do NOT answer the question directly. Instead:
-             1. Acknowledge their question warmly
-             2. Explain that the answer really depends on their personal situation
-             3. Ask ONE specific follow-up question DIRECTLY RELATED to their question
+             The paragraph they were reading:
+             "${paragraphContext}"
 
-             CRITICAL: Your follow-up must be directly relevant to "${question}".
-             Do NOT ask about unrelated topics like budget, timeline, or other factors unless
-             they are directly necessary to answer THIS specific question.
+             The question they clicked: "${question}"
+             Session memory: ${sessionMemory}
 
-             Keep it conversational and brief. 2-3 sentences max.`,
+             CRITICAL INSIGHT: The question they clicked REVEALS what personal information they're open to sharing.
+             Examples:
+             - "What fits my budget?" → They want to talk about their BUDGET. Ask about their budget.
+             - "Would this work for my age?" → They want to talk about their AGE. Ask about their age.
+             - "Is this right for my skin type?" → They want to talk about their SKIN/HEALTH. Ask about that.
+             - "What's best for my goals?" → They want to talk about their GOALS. Ask about their goals.
+
+             YOUR TASK:
+             1. Quickly explain that to give them a truly helpful answer, you need to know more about the SPECIFIC topic their question mentions
+             2. Ask them directly about that topic (the one THEY brought up in their question)
+
+             STRICT RULES:
+             - ONLY ask about what their question implies (budget→budget, age→age, goals→goals, etc.)
+             - Do NOT ask about unrelated personal details
+             - Do NOT answer the question yet
+             - Keep it conversational, 2-3 sentences max`,
             { length: 200 }
           );
         } else {
           // FOLLOW-UP MESSAGE: Extract insights, then respond helpfully
 
-          // Step 1: Extract any personal insights from the user's message
+          // Step 1: Extract ACTIONABLE lead qualification data from the user's message
           const extractionResult = await adk.zai.text(
-            `Analyze this message from a user and extract any personal information they revealed.
+            `Extract SPECIFIC, ACTIONABLE information from this message that a business could use for lead qualification.
 
              User message: "${question}"
 
-             Extract insights in this JSON format (return empty array if no insights found):
-             [{"category": "budget|age|goal|concern|lifestyle|preference|experience|timeline|health|location", "insight": "the specific info"}]
+             PRIORITY DATA (capture these with exact numbers/details):
+             - Specific price points: "$5-8", "under $50", "willing to spend $100"
+             - Purchase frequency: "weekly", "twice a month", "daily"
+             - Product/service interests: what specific things they want
+             - Demographics: age, location, family status
+             - Pain points: specific problems they're trying to solve
+             - Timeline: "looking to buy soon", "next month", "researching"
+
+             Format: [{"category": "spending|frequency|interest|demographic|pain_point|timeline", "insight": "SPECIFIC detail with numbers"}]
 
              Examples:
-             - "I'm 45 and worried about aging" → [{"category": "age", "insight": "45 years old"}, {"category": "concern", "insight": "worried about aging"}]
-             - "I spend about $200 a month" → [{"category": "budget", "insight": "$200 per month"}]
-             - "I have oily skin" → [{"category": "health", "insight": "oily skin"}]
-             - "Just asking out of curiosity" → []
+             - "I usually spend $5-8 on bubble tea" → [{"category": "spending", "insight": "$5-8 per bubble tea"}, {"category": "interest", "insight": "bubble tea"}]
+             - "I buy skincare products every week" → [{"category": "frequency", "insight": "weekly purchases"}, {"category": "interest", "insight": "skincare products"}]
+             - "I'm 32 and looking for anti-aging stuff" → [{"category": "demographic", "insight": "32 years old"}, {"category": "interest", "insight": "anti-aging products"}]
+             - "Just curious" → []
 
-             Return ONLY the JSON array, nothing else.`,
-            { length: 200 }
+             IMPORTANT: Capture EXACT numbers and specifics. "$5-8" is better than "low budget".
+
+             Return ONLY the JSON array.`,
+            { length: 300 }
           );
 
           // Save extracted insights
@@ -410,7 +453,11 @@ export default new Conversation({
             `You are a friendly, helpful assistant discussing an article with a reader.
 
              Article: "${articleTitle}"
-             Original question they clicked: "${originalQuestion}"
+
+             The paragraph they were reading:
+             "${paragraphContext}"
+
+             Original question they clicked: "${originalQuestion}"${sessionMemory}
 
              Conversation so far:
              ${historyText}
@@ -418,6 +465,7 @@ export default new Conversation({
              Reader's latest message: "${question}"
 
              YOUR TASK: Simply answer or respond to what they said. Be helpful and warm.
+             Use the paragraph context and what they've shared in this session to give relevant, personalized answers.
 
              STRICT RULES:
              - Do NOT ask follow-up questions unless the user EXPLICITLY asked you something you cannot answer

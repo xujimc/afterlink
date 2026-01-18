@@ -64,6 +64,9 @@ export default function ArticlePage() {
   // Track which question is currently expanded
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
 
+  // Generate a unique session ID for this article page load (not persistent)
+  const sessionIdRef = useRef<string>(`session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+
   // Prevent double execution in React Strict Mode
   const hasStartedRef = useRef(false);
 
@@ -98,14 +101,13 @@ export default function ArticlePage() {
     loadArticle();
   }, [slug, title]);
 
-  const handleSendMessage = useCallback(async (
-    question: string,
-    history: ConversationMessage[]
-  ): Promise<string> => {
-    if (!article) throw new Error("No article loaded");
-    // Remove markers from content before sending to bot
-    const cleanContent = article.content.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
-    return askArticleQuestion(article.title, cleanContent, question, history);
+  const createMessageHandler = useCallback((paragraphContext: string) => {
+    return async (question: string, history: ConversationMessage[]): Promise<string> => {
+      if (!article) throw new Error("No article loaded");
+      // Remove markers from paragraph context
+      const cleanContext = paragraphContext.replace(/\{\{Q:([^}]+)\}\}/g, '$1');
+      return askArticleQuestion(article.title, cleanContext, question, history, sessionIdRef.current);
+    };
   }, [article, askArticleQuestion]);
 
   const handleQuestionClick = (questionId: string) => {
@@ -137,11 +139,11 @@ export default function ArticlePage() {
                   key={partIndex}
                   onClick={() => handleQuestionClick(questionId)}
                   className={`
-                    cursor-pointer transition-all duration-200
+                    cursor-pointer transition-colors duration-200
                     border-b-2 border-[#FFC017]
                     ${isExpanded
-                      ? "bg-[#FFC017]/30 px-1 rounded"
-                      : "hover:bg-[#FFC017]/20 hover:px-1 hover:rounded"
+                      ? "bg-[#FFC017]/30"
+                      : "hover:bg-[#FFC017]/20"
                     }
                   `}
                   title="Click to explore this topic"
@@ -163,8 +165,8 @@ export default function ArticlePage() {
                 key={`chat-${questionId}`}
                 phrase={part.content}
                 articleTitle={article.title}
-                articleContent={article.content}
-                onSendMessage={handleSendMessage}
+                paragraphContext={paragraph}
+                onSendMessage={createMessageHandler(paragraph)}
                 onClose={() => setExpandedQuestionId(null)}
               />
             );

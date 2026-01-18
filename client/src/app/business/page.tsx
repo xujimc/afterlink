@@ -42,16 +42,18 @@ export default function BusinessDashboard() {
   // Get category color
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
+      spending: "bg-green-100 text-green-800",
+      frequency: "bg-blue-100 text-blue-800",
+      interest: "bg-purple-100 text-purple-800",
+      demographic: "bg-orange-100 text-orange-800",
+      pain_point: "bg-red-100 text-red-800",
+      timeline: "bg-yellow-100 text-yellow-800",
+      // Legacy categories
       budget: "bg-green-100 text-green-800",
-      age: "bg-blue-100 text-blue-800",
+      age: "bg-orange-100 text-orange-800",
       goal: "bg-purple-100 text-purple-800",
       concern: "bg-red-100 text-red-800",
-      lifestyle: "bg-yellow-100 text-yellow-800",
       preference: "bg-pink-100 text-pink-800",
-      experience: "bg-indigo-100 text-indigo-800",
-      timeline: "bg-orange-100 text-orange-800",
-      health: "bg-teal-100 text-teal-800",
-      location: "bg-cyan-100 text-cyan-800",
     };
     return colors[category] || "bg-gray-100 text-gray-800";
   };

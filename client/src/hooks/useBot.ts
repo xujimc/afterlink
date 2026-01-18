@@ -204,22 +204,24 @@ export function useBot() {
 
   const askArticleQuestion = useCallback(async (
     articleTitle: string,
-    articleContent: string,
+    paragraphContext: string,
     question: string,
-    conversationHistory: ConversationMessage[]
+    conversationHistory: ConversationMessage[],
+    sessionId?: string
   ): Promise<string> => {
     const client = await getClient();
     const { conversation } = await client.createConversation({});
 
-    const userId = getUserId();
+    // Use session ID if provided, otherwise fall back to persistent user ID
+    const oduserId = sessionId || getUserId();
     const isFirstMessage = conversationHistory.length === 0;
 
     const payload = JSON.stringify({
       articleTitle,
-      articleContent,
+      paragraphContext,
       question,
       conversationHistory,
-      userId,
+      userId: oduserId,
       isFirstMessage,
     });
 

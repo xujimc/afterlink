@@ -16,7 +16,7 @@ interface ConversationMessage {
 interface InlineChatProps {
   phrase: string;
   articleTitle: string;
-  articleContent: string;
+  paragraphContext: string;
   onSendMessage: (question: string, history: ConversationMessage[]) => Promise<string>;
   onClose: () => void;
 }
@@ -24,7 +24,7 @@ interface InlineChatProps {
 export function InlineChat({
   phrase,
   articleTitle,
-  articleContent,
+  paragraphContext,
   onSendMessage,
   onClose,
 }: InlineChatProps) {
