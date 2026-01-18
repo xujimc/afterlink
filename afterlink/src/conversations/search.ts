@@ -424,15 +424,24 @@ export default new Conversation({
              - ONLY include facts the lead EXPLICITLY stated
              - DO NOT guess, infer, or assume anything
              - DO NOT estimate age, income, or any demographic unless they said it
-             - If they said "I spend $5-8" write exactly that, don't add interpretations like "price-conscious"
+             - If they said "I spend $5-8" write exactly that, don't add interpretations
+
+             INTEREST vs CURIOSITY:
+             - Asking questions is NOT interest, it's just curiosity. Do NOT note it.
+             - ONLY note interest if they EXPLICITLY say:
+               - "I want to..." / "I'd like to..." / "I'm interested in..."
+               - "I plan to..." / "I'm going to..." / "I'm looking for..."
+               - "I need..." / "I'm trying to..."
+             - Questions like "How does X work?" or "What is Y?" = curiosity, NOT interest
+             - Do NOT write "interested in X" unless they literally said they are interested
 
              Return JSON:
              {
                "theme": "food|beauty|fitness|tech|finance|health|education|travel|home|fashion|other",
-               "note": "Only explicit facts. Example: 'Spends $5-8 on bubble tea. Goes twice a week. Prefers less sweet.'"
+               "note": "Only explicit facts and stated interests. No inferences from questions."
              }
 
-             If no explicit personal facts were shared, return empty note.`,
+             If they only asked questions without stating facts about themselves, return empty note.`,
             { length: 300 }
           );
 
@@ -531,7 +540,67 @@ export default new Conversation({
     // Handle GET_INSIGHTS request (for business dashboard)
     if (text === "GET_INSIGHTS") {
       try {
-        const { rows } = await userInsightsTable.findRows({});
+        let { rows } = await userInsightsTable.findRows({});
+
+        // Auto-seed mock data if database is empty (one-time)
+        if (rows.length === 0) {
+          const mockLeads = [
+            {
+              oduserId: "mock_lead_1",
+              articleTitle: "Best Bubble Tea Spots in the City",
+              category: "food",
+              insight: "Spends $5-8 per bubble tea. Visits 2-3 times per week. Prefers less sugar (30-50%). Likes taro and brown sugar flavors.",
+              rawMessage: "",
+            },
+            {
+              oduserId: "mock_lead_2",
+              articleTitle: "Skincare Routine for Your 30s",
+              category: "beauty",
+              insight: "32 years old. Has combination skin - oily T-zone, dry cheeks. Currently spends $150/month on skincare. Looking for anti-aging products. Concerned about fine lines.",
+              rawMessage: "",
+            },
+            {
+              oduserId: "mock_lead_3",
+              articleTitle: "Home Workout Equipment Guide",
+              category: "fitness",
+              insight: "Works out 4x per week at home. Budget of $500 for equipment. Has limited space (apartment). Interested in strength training. Already owns dumbbells.",
+              rawMessage: "",
+            },
+            {
+              oduserId: "mock_lead_4",
+              articleTitle: "Investing for Beginners",
+              category: "finance",
+              insight: "25 years old. Just started first job. Has $1000 to invest. Risk-tolerant. Interested in index funds and ETFs. No debt.",
+              rawMessage: "",
+            },
+            {
+              oduserId: "mock_lead_5",
+              articleTitle: "Best Coffee Machines for Home",
+              category: "food",
+              insight: "Drinks 3 cups of coffee daily. Currently spending $15/day at cafes. Budget up to $800 for a machine. Prefers espresso-based drinks. Has counter space.",
+              rawMessage: "",
+            },
+            {
+              oduserId: "mock_lead_6",
+              articleTitle: "Learning Piano as an Adult",
+              category: "education",
+              insight: "45 years old. Complete beginner. Can practice 30 min daily. Interested in digital piano under $1000. Wants to play classical music.",
+              rawMessage: "",
+            },
+            {
+              oduserId: "mock_lead_7",
+              articleTitle: "Sustainable Fashion Guide",
+              category: "fashion",
+              insight: "28 years old. Trying to build capsule wardrobe. Budget $200/month for clothes. Prefers neutral colors. Size medium. Works in casual office.",
+              rawMessage: "",
+            },
+          ];
+          await userInsightsTable.createRows({ rows: mockLeads });
+          logger.info("[search] Auto-seeded mock data");
+          const result = await userInsightsTable.findRows({});
+          rows = result.rows;
+        }
+
         logger.info("[search] Fetched insights:", rows.length);
 
         await conversation.send({
@@ -543,6 +612,288 @@ export default new Conversation({
         await conversation.send({
           type: "text",
           payload: { text: JSON.stringify({ error: "Failed to fetch insights" }) },
+        });
+      }
+      return;
+    }
+
+    // Handle SEED_MOCK_DATA request (for testing)
+    if (text === "SEED_MOCK_DATA") {
+      try {
+        const mockLeads = [
+          {
+            oduserId: "mock_lead_1",
+            articleTitle: "Best Bubble Tea Spots in the City",
+            category: "food",
+            insight: "Spends $5-8 per bubble tea. Visits 2-3 times per week. Prefers less sugar (30-50%). Likes taro and brown sugar flavors.",
+            rawMessage: "",
+          },
+          {
+            oduserId: "mock_lead_2",
+            articleTitle: "Skincare Routine for Your 30s",
+            category: "beauty",
+            insight: "32 years old. Has combination skin - oily T-zone, dry cheeks. Currently spends $150/month on skincare. Looking for anti-aging products. Concerned about fine lines.",
+            rawMessage: "",
+          },
+          {
+            oduserId: "mock_lead_3",
+            articleTitle: "Home Workout Equipment Guide",
+            category: "fitness",
+            insight: "Works out 4x per week at home. Budget of $500 for equipment. Has limited space (apartment). Interested in strength training. Already owns dumbbells.",
+            rawMessage: "",
+          },
+          {
+            oduserId: "mock_lead_4",
+            articleTitle: "Investing for Beginners",
+            category: "finance",
+            insight: "25 years old. Just started first job. Has $1000 to invest. Risk-tolerant. Interested in index funds and ETFs. No debt.",
+            rawMessage: "",
+          },
+          {
+            oduserId: "mock_lead_5",
+            articleTitle: "Best Coffee Machines for Home",
+            category: "food",
+            insight: "Drinks 3 cups of coffee daily. Currently spending $15/day at cafes. Budget up to $800 for a machine. Prefers espresso-based drinks. Has counter space.",
+            rawMessage: "",
+          },
+          {
+            oduserId: "mock_lead_6",
+            articleTitle: "Learning Piano as an Adult",
+            category: "education",
+            insight: "45 years old. Complete beginner. Can practice 30 min daily. Interested in digital piano under $1000. Wants to play classical music.",
+            rawMessage: "",
+          },
+          {
+            oduserId: "mock_lead_7",
+            articleTitle: "Sustainable Fashion Guide",
+            category: "fashion",
+            insight: "28 years old. Trying to build capsule wardrobe. Budget $200/month for clothes. Prefers neutral colors. Size medium. Works in casual office.",
+            rawMessage: "",
+          },
+        ];
+
+        await userInsightsTable.createRows({ rows: mockLeads });
+        logger.info("[search] Seeded mock data:", mockLeads.length);
+
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ success: true, message: `Seeded ${mockLeads.length} mock leads` }) },
+        });
+      } catch (error) {
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ success: false, error: String(error) }) },
+        });
+      }
+      return;
+    }
+
+    // Handle MATCH_ICP request (score leads against ICP)
+    // Uses B2C lead scoring: Fit, Budget, Need, Urgency, Engagement
+    if (text.startsWith("MATCH_ICP:")) {
+      const jsonStr = text.replace("MATCH_ICP:", "").trim();
+
+      try {
+        const { icpDescription, leads } = JSON.parse(jsonStr) as {
+          icpDescription: string;
+          leads: Array<{ oduserId: string; insight: string }>;
+        };
+
+        logger.info("[search] Matching ICP against", leads.length, "leads");
+
+        // Score each lead across 5 B2C dimensions
+        const scores: Array<{
+          oduserId: string;
+          score: number;
+          reason: string;
+          breakdown: {
+            fit: { points: number; max: number; detail: string };
+            budget: { points: number; max: number; detail: string };
+            need: { points: number; max: number; detail: string };
+            urgency: { points: number; max: number; detail: string };
+            engagement: { points: number; max: number; detail: string };
+          };
+        }> = [];
+
+        for (const lead of leads) {
+          // Single LLM call to score all 5 dimensions
+          const scoringResult = await adk.zai.text(
+            `You are scoring a lead against an Ideal Customer Profile (ICP).
+
+ICP DESCRIPTION:
+"${icpDescription}"
+
+LEAD PROFILE:
+"${lead.insight}"
+
+STEP 1: UNDERSTAND THE ICP
+First, identify what the ICP is really about:
+- What domain/category? (beauty, food, fitness, finance, tech, etc.)
+- What underlying concerns or desires? (aging, health, saving money, convenience, etc.)
+- What type of person? (high spender, budget-conscious, beginners, experts, etc.)
+
+STEP 2: UNDERSTAND THE LEAD
+Then, identify what the lead has shared:
+- What domain are they in?
+- What are their underlying concerns or motivations?
+- What type of person are they based on their behavior?
+
+STEP 3: SCORE EACH DIMENSION
+Think CONCEPTUALLY, not literally. Words don't need to match exactly.
+Someone who cares about "fine lines" also cares about aging, appearance, skin health, and looking younger.
+Someone who likes "bubble tea" also likes sweet drinks, treats, and beverages.
+
+DIMENSIONS:
+
+1. FIT (0-100): Conceptual overlap between lead's world and ICP's world
+   - Think about the underlying domain, not surface words
+   - Are they in the same category of life/interests?
+   - Would a product for the ICP plausibly interest this lead?
+   - 0 = completely different worlds (piano enthusiast vs sweet beverages)
+   - 100 = perfect domain match
+
+2. BUDGET (0-100): Does their spending match what ICP expects?
+   - Compare their stated spending to what the ICP implies
+   - High-spender ICP + high-spending lead = high score
+   - Budget-friendly ICP + budget-conscious lead = high score
+   - Mismatch (high-spender ICP + cheap lead) = low score
+   - 0 = no spending information mentioned
+
+3. NEED (0-100): Do they have a problem/desire the ICP addresses?
+   - Look for concerns, complaints, goals, or desires
+   - "Concerned about X", "want to Y", "looking for Z" = need exists
+   - The need must be relevant to what ICP is solving
+   - 0 = no problems or desires expressed, just neutral descriptions
+
+4. URGENCY (0-100): Are they actively seeking a solution?
+   - "Looking for", "need", "planning to", "want to try" = high urgency
+   - "Interested in", "curious about" = medium urgency
+   - Just describing habits or preferences = low/no urgency
+   - 0 = no buying signals at all
+
+5. ENGAGEMENT (0-100): How much useful detail did they share?
+   - Specific numbers, frequencies, preferences = high
+   - Some details = medium
+   - Vague statements = low
+
+SCORING RULES:
+- Score based ONLY on what is explicitly stated
+- 0 means the dimension has NO relevant information (not "unknown", just absent)
+- Think conceptually about fit - related domains should score well
+- Be generous with FIT if domains overlap, strict with other dimensions
+
+Return JSON only:
+{
+  "fit": { "score": number, "detail": "one sentence explaining the conceptual connection or lack thereof" },
+  "budget": { "score": number, "detail": "one sentence" },
+  "need": { "score": number, "detail": "one sentence" },
+  "urgency": { "score": number, "detail": "one sentence" },
+  "engagement": { "score": number, "detail": "one sentence" }
+}`,
+            { length: 500 }
+          );
+
+          let resultClean = scoringResult.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+          const dimScores = JSON.parse(resultClean) as {
+            fit: { score: number; detail: string };
+            budget: { score: number; detail: string };
+            need: { score: number; detail: string };
+            urgency: { score: number; detail: string };
+            engagement: { score: number; detail: string };
+          };
+
+          logger.info(`[search] Lead ${lead.oduserId} scores:`, JSON.stringify(dimScores));
+
+          // Weights for each dimension (sum to 100)
+          const weights = {
+            fit: 35,        // Most important - do they match?
+            budget: 20,     // Can they afford it?
+            need: 20,       // Do they have a problem to solve?
+            urgency: 15,    // Are they ready to buy?
+            engagement: 10, // How much did they share?
+          };
+
+          // Calculate weighted points for each dimension
+          const breakdown = {
+            fit: {
+              points: Math.round((dimScores.fit.score / 100) * weights.fit * 10) / 10,
+              max: weights.fit,
+              detail: dimScores.fit.detail,
+            },
+            budget: {
+              points: Math.round((dimScores.budget.score / 100) * weights.budget * 10) / 10,
+              max: weights.budget,
+              detail: dimScores.budget.detail,
+            },
+            need: {
+              points: Math.round((dimScores.need.score / 100) * weights.need * 10) / 10,
+              max: weights.need,
+              detail: dimScores.need.detail,
+            },
+            urgency: {
+              points: Math.round((dimScores.urgency.score / 100) * weights.urgency * 10) / 10,
+              max: weights.urgency,
+              detail: dimScores.urgency.detail,
+            },
+            engagement: {
+              points: Math.round((dimScores.engagement.score / 100) * weights.engagement * 10) / 10,
+              max: weights.engagement,
+              detail: dimScores.engagement.detail,
+            },
+          };
+
+          // Calculate total score
+          // Apply exponential curve to fit (most important dimension)
+          // Low fit should crush the score
+          const fitRaw = dimScores.fit.score / 100;
+          const fitGate = Math.pow(fitRaw, 1.5); // Exponential penalty for low fit
+
+          const rawTotal =
+            breakdown.fit.points +
+            breakdown.budget.points +
+            breakdown.need.points +
+            breakdown.urgency.points +
+            breakdown.engagement.points;
+
+          // Final score = raw total * fit gate
+          // This means low fit crushes everything
+          const totalScore = Math.round(rawTotal * fitGate);
+
+          // Generate reason summary
+          const strongPoints: string[] = [];
+          const weakPoints: string[] = [];
+
+          for (const [key, value] of Object.entries(breakdown)) {
+            const ratio = value.points / value.max;
+            if (ratio >= 0.7) strongPoints.push(key);
+            else if (ratio <= 0.3) weakPoints.push(key);
+          }
+
+          let reason = "";
+          if (strongPoints.length > 0) reason += `Strong: ${strongPoints.join(", ")}. `;
+          if (weakPoints.length > 0) reason += `Weak: ${weakPoints.join(", ")}.`;
+          if (!reason) reason = "Average match across criteria.";
+
+          scores.push({
+            oduserId: lead.oduserId,
+            score: totalScore,
+            reason: reason.trim(),
+            breakdown,
+          });
+        }
+
+        // Sort by score descending
+        scores.sort((a, b) => b.score - a.score);
+
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ scores }) },
+        });
+      } catch (error) {
+        logger.error("[search] Error matching ICP:", error);
+        await conversation.send({
+          type: "text",
+          payload: { text: JSON.stringify({ error: "Failed to match ICP" }) },
         });
       }
       return;

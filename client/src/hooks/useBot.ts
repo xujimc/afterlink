@@ -294,5 +294,57 @@ export function useBot() {
     }
   }, [getClient, waitForBotResponse]);
 
-  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, getInsights, isReady };
+  const seedMockData = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: "SEED_MOCK_DATA",
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      return JSON.parse(response);
+    } catch {
+      return { success: false, message: "Failed to parse response" };
+    }
+  }, [getClient, waitForBotResponse]);
+
+  const matchICP = useCallback(async (
+    icpDescription: string,
+    leads: Array<{ oduserId: string; insight: string }>
+  ): Promise<Array<{ oduserId: string; score: number; reason: string }>> => {
+    const client = await getClient();
+    const { conversation } = await client.createConversation({});
+
+    const payload = JSON.stringify({ icpDescription, leads });
+
+    const { message } = await client.createMessage({
+      conversationId: conversation.id,
+      payload: {
+        type: "text",
+        text: `MATCH_ICP:${payload}`,
+      },
+    });
+
+    const response = await waitForBotResponse(client, conversation.id, message.id, []);
+
+    try {
+      const parsed = JSON.parse(response) as { scores?: Array<{ oduserId: string; score: number; reason: string }>; error?: string };
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+      return parsed.scores || [];
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      throw new Error("Failed to match ICP");
+    }
+  }, [getClient, waitForBotResponse]);
+
+  return { search, getArticle, getStoredArticle, askArticleQuestion, clearArticles, getInsights, seedMockData, matchICP, isReady };
 }

@@ -1,0 +1,491 @@
+================================================================================
+AFTERLINK - AI IMPLEMENTATION & QUALITY ASSURANCE DOCUMENTATION
+================================================================================
+
+This document explains every AI integration in the Afterlink platform, the logic
+behind each implementation, and why the outputs can be trusted for quality.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. Overview of AI Strategy
+2. Search & Discovery
+   2.1 Query Validation
+   2.2 Article Relevance Matching
+   2.3 New Article Suggestions
+3. Article Generation
+   3.1 Full Article with Embedded Questions
+   3.2 Article Snippet Generation
+4. Conversational Lead Qualification
+   4.1 First Message Handler
+   4.2 Follow-up Message Handler
+   4.3 Lead Profile Extraction
+5. ICP Matching & Scoring
+   5.1 ICP Criteria Extraction
+   5.2 Lead Attribute Extraction
+   5.3 Deterministic Scoring Algorithm
+6. Quality Assurance Summary
+
+================================================================================
+1. OVERVIEW OF AI STRATEGY
+================================================================================
+
+Afterlink uses a HYBRID approach that combines:
+- LLM capabilities for understanding natural language and extracting structure
+- Deterministic algorithms for consistent, auditable scoring
+- Strict prompts with explicit rules to minimize hallucination
+
+CORE PRINCIPLE: Use AI for what it's good at (understanding intent, extracting
+structure from unstructured text) and use code for what requires consistency
+(scoring, validation, business logic).
+
+================================================================================
+2. SEARCH & DISCOVERY
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 QUERY VALIDATION
+--------------------------------------------------------------------------------
+
+PURPOSE: Determine if a user's search query is comprehensible/meaningful
+
+IMPLEMENTATION:
+- Simple yes/no classification task
+- Prompt asks: "Is this a comprehensible search query?"
+- Response constrained to "yes" or "no"
+
+WHY THIS IS RELIABLE:
+- Binary classification is one of the simplest LLM tasks
+- No generation required, just judgment
+- Low hallucination risk due to constrained output
+- Fallback: If unclear, defaults to treating as valid (user-friendly)
+
+LOCATION: search.ts, lines 38-47
+
+--------------------------------------------------------------------------------
+2.2 ARTICLE RELEVANCE MATCHING
+--------------------------------------------------------------------------------
+
+PURPOSE: Given existing articles, determine which are relevant to a search query
+
+IMPLEMENTATION:
+- Input: List of existing articles (id, title, snippet)
+- Input: User's search query
+- Output: JSON array of relevant article IDs
+
+WHY THIS IS RELIABLE:
+- Structured input (article list with clear fields)
+- Structured output (array of integers)
+- LLM only needs to match concepts, not generate content
+- Deduplication applied to output (code-level safeguard)
+- JSON parsing validates output format
+
+LOCATION: search.ts, lines 74-105
+
+--------------------------------------------------------------------------------
+2.3 NEW ARTICLE SUGGESTIONS
+--------------------------------------------------------------------------------
+
+PURPOSE: Generate new article ideas when not enough existing articles match
+
+IMPLEMENTATION:
+- Input: Search query, list of existing titles to avoid
+- Output: JSON array of {title, snippet} objects
+- Constrained to generate exactly N suggestions
+
+WHY THIS IS RELIABLE:
+- Explicit instruction to avoid existing titles (prevents duplicates)
+- Structured JSON output is validated by parsing
+- Short outputs (title + snippet) reduce hallucination surface
+- Suggestions are just titles - actual content generated separately
+
+LOCATION: search.ts, lines 112-142
+
+================================================================================
+3. ARTICLE GENERATION
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 FULL ARTICLE WITH EMBEDDED QUESTIONS
+--------------------------------------------------------------------------------
+
+PURPOSE: Generate informative articles with strategically placed questions that
+encourage readers to share personal information
+
+IMPLEMENTATION:
+- Input: Article title
+- Output: 5-7 paragraph article (500-600 words)
+- Special format: {{Q:question text}} markers for interactive questions
+
+PROMPT DESIGN RATIONALE:
+
+1. QUESTION PLACEMENT RULES:
+   - Questions must directly relate to preceding content
+   - Questions ask for personalization of general information
+   - First-person format ("I", "my", "me")
+   - Article must NOT answer the question after it
+
+   WHY: This ensures questions feel natural and create genuine curiosity
+   gaps that motivate sharing personal context.
+
+2. EXAMPLE-DRIVEN LEARNING:
+   - Prompt includes concrete examples of good question placement
+   - Shows the pattern: general statement → personalization question
+
+   WHY: Examples are more effective than abstract rules for LLMs.
+   They demonstrate the exact pattern we want.
+
+3. WRITING STYLE CONSTRAINTS:
+   - Conversational tone
+   - Hook-based opening
+   - Use of "you" and "your"
+
+   WHY: Consistent style makes articles feel cohesive and engaging.
+
+WHY THIS IS RELIABLE:
+- Structured output format ({{Q:...}}) is easily validated
+- Content length is constrained (500-600 words)
+- Examples in prompt guide the model toward desired behavior
+- Questions are validated by regex parsing on the client
+
+LOCATION: search.ts, lines 177-207
+
+--------------------------------------------------------------------------------
+3.2 ARTICLE SNIPPET GENERATION
+--------------------------------------------------------------------------------
+
+PURPOSE: Create one-sentence summary for article listings
+
+IMPLEMENTATION:
+- Input: Article title
+- Output: Max 150 characters
+- Constraint: Just the summary, no quotes or formatting
+
+WHY THIS IS RELIABLE:
+- Extremely constrained output (one sentence, 150 chars)
+- Simple summarization task
+- Length limit enforced in prompt
+
+LOCATION: search.ts, lines 211-215
+
+================================================================================
+4. CONVERSATIONAL LEAD QUALIFICATION
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 FIRST MESSAGE HANDLER
+--------------------------------------------------------------------------------
+
+PURPOSE: When a user clicks a question, respond by asking for the specific
+personal information implied by their question
+
+IMPLEMENTATION:
+- Input: Article title, paragraph context, question clicked
+- Output: 2-3 sentence response asking for relevant personal info
+
+PROMPT DESIGN RATIONALE:
+
+1. CRITICAL INSIGHT EXPLANATION:
+   The prompt explicitly explains: "The question they clicked REVEALS what
+   personal information they're open to sharing."
+
+   Examples provided:
+   - "What fits my budget?" → Ask about BUDGET
+   - "Would this work for my age?" → Ask about AGE
+
+   WHY: This creates a consistent mapping between question type and
+   information to request.
+
+2. STRICT RULES:
+   - ONLY ask about what their question implies
+   - Do NOT ask about unrelated personal details
+   - Do NOT answer the question yet
+
+   WHY: Prevents the AI from being overly invasive or off-topic.
+
+3. SESSION MEMORY INTEGRATION:
+   - Previous insights from this session are injected
+   - Instruction: "Don't ask about things they already told you"
+
+   WHY: Creates continuity and avoids annoying repetition.
+
+WHY THIS IS RELIABLE:
+- Clear mapping from question type to response type
+- Examples ground the model's behavior
+- Short output (2-3 sentences) limits variability
+- Session memory prevents redundant questions
+
+LOCATION: search.ts, lines 358-388
+
+--------------------------------------------------------------------------------
+4.2 FOLLOW-UP MESSAGE HANDLER
+--------------------------------------------------------------------------------
+
+PURPOSE: Respond helpfully to user messages after initial exchange
+
+IMPLEMENTATION:
+- Input: Full conversation history, article context, user's message
+- Output: Helpful response (2-3 sentences)
+
+PROMPT DESIGN RATIONALE:
+
+1. RESPONSE-FOCUSED:
+   - "Simply answer or respond to what they said"
+   - "Be helpful and warm"
+
+2. STRICT RULES:
+   - Do NOT ask follow-up questions (unless truly necessary)
+   - Do NOT introduce new topics
+   - Do NOT probe for more information
+   - Just respond, then stop
+
+   WHY: Prevents the AI from being pushy or interrogative. The lead
+   extraction happens separately - the conversation should feel natural.
+
+WHY THIS IS RELIABLE:
+- Clear instruction to NOT probe further
+- Conversation history provides context for coherent responses
+- Short output constraint
+- Separation of concerns: conversation vs. extraction
+
+LOCATION: search.ts, lines 497-522
+
+--------------------------------------------------------------------------------
+4.3 LEAD PROFILE EXTRACTION
+--------------------------------------------------------------------------------
+
+PURPOSE: Extract factual lead information from conversation history
+
+IMPLEMENTATION:
+- Input: All user messages from the conversation
+- Input: Any existing notes from this session
+- Output: JSON {theme, note}
+
+PROMPT DESIGN RATIONALE:
+
+1. SALESMAN FRAMING:
+   "You are helping a salesman prepare for outreach. Write a factual profile."
+
+   WHY: This framing encourages practical, actionable information extraction.
+
+2. STRICT FACTUAL RULES:
+   - ONLY include facts the lead EXPLICITLY stated
+   - DO NOT guess, infer, or assume anything
+   - DO NOT estimate demographics unless stated
+   - If they said "I spend $5-8" write exactly that
+
+   WHY: Prevents hallucination of lead information. Only real data is stored.
+
+3. INTEREST VS CURIOSITY DISTINCTION:
+   - Asking questions is NOT interest, just curiosity
+   - ONLY note interest if explicitly stated:
+     - "I want to..." / "I'd like to..."
+     - "I plan to..." / "I'm going to..."
+     - "I need..." / "I'm trying to..."
+   - Questions like "How does X work?" = curiosity, NOT interest
+
+   WHY: This critical distinction prevents over-interpretation of user
+   behavior. A question shows curiosity, not buying intent.
+
+4. EMPTY OUTPUT HANDLING:
+   "If they only asked questions without stating facts, return empty note."
+
+   WHY: Better to have no data than hallucinated data.
+
+WHY THIS IS RELIABLE:
+- Explicit rules against inference
+- Clear distinction between curiosity and interest
+- Structured JSON output validates format
+- Empty output is acceptable (no pressure to fabricate)
+- Input is ONLY user messages (not article content)
+
+LOCATION: search.ts, lines 415-446
+
+================================================================================
+5. ICP MATCHING & SCORING
+================================================================================
+
+This is a THREE-PHASE system that combines AI extraction with deterministic
+scoring for transparent, consistent results.
+
+--------------------------------------------------------------------------------
+5.1 ICP CRITERIA EXTRACTION (Phase 1)
+--------------------------------------------------------------------------------
+
+PURPOSE: Convert free-form ICP description into structured, scoreable criteria
+
+IMPLEMENTATION:
+- Input: ICP description text
+- Output: Structured JSON with criteria and weights
+
+OUTPUT SCHEMA:
+{
+  "ageRange": { "min": number|null, "max": number|null },
+  "incomeLevel": "low"|"medium"|"high"|"very_high"|null,
+  "monthlyBudget": { "min": number|null },
+  "interests": ["category1", "category2", ...],
+  "intentRequired": true|false,
+  "locationPreference": "urban"|"suburban"|"rural"|null,
+  "weights": {
+    "age": 15,
+    "income": 15,
+    "budget": 25,
+    "interests": 25,
+    "intent": 20
+  }
+}
+
+WHY THIS IS RELIABLE:
+- Structured schema constrains output format
+- null values allowed for unmentioned criteria
+- Weights must sum to 100 (model instructed)
+- Weights reflect emphasis in description
+- JSON parsing validates output
+
+LOCATION: search.ts, lines 703-741
+
+--------------------------------------------------------------------------------
+5.2 LEAD ATTRIBUTE EXTRACTION (Phase 2)
+--------------------------------------------------------------------------------
+
+PURPOSE: Extract same structured attributes from each lead's profile
+
+IMPLEMENTATION:
+- Input: Lead's insight/profile text
+- Output: Structured JSON matching ICP schema
+
+OUTPUT SCHEMA:
+{
+  "age": number|null,
+  "incomeLevel": "low"|"medium"|"high"|"very_high"|null,
+  "monthlySpend": number|null,
+  "interests": ["category1", ...],
+  "expressedIntent": true|false,
+  "location": "urban"|"suburban"|"rural"|null
+}
+
+EXTRACTION RULES:
+- Only extract EXPLICITLY stated information
+- expressedIntent true ONLY for "I want", "I plan to", etc.
+- Income inferred from spending patterns (e.g., $150/mo skincare = medium-high)
+- null for anything not mentioned
+
+WHY THIS IS RELIABLE:
+- Same strict extraction rules as lead qualification
+- Structured output validates format
+- null values prevent fabrication
+- Income inference rule is explicit and bounded
+
+LOCATION: search.ts, lines 760-793
+
+--------------------------------------------------------------------------------
+5.3 DETERMINISTIC SCORING ALGORITHM (Phase 3)
+--------------------------------------------------------------------------------
+
+PURPOSE: Calculate transparent, consistent scores using extracted data
+
+IMPLEMENTATION: Pure TypeScript code (NO AI)
+
+SCORING RULES BY CATEGORY:
+
+AGE:
+- In range: 100% of weight
+- Outside range: Partial score based on distance from midpoint
+- Unknown: 50% of weight
+- No requirement: 100% of weight
+
+INCOME:
+- Meets or exceeds level: 100% of weight
+- Below level: Partial based on level difference (33% per level)
+- Unknown: 50% of weight
+- No requirement: 100% of weight
+
+BUDGET:
+- Meets minimum: 100% of weight
+- Below minimum: Proportional (spend/minimum ratio)
+- Unknown: 50% of weight
+- No requirement: 100% of weight
+
+INTERESTS:
+- Match ratio: (matches / required) * weight
+- Fuzzy matching: substring inclusion both directions
+- No requirement: 100% of weight
+
+INTENT:
+- If required and expressed: 100% of weight
+- If required but not expressed: 0%
+- If not required but expressed: 100% (bonus)
+- If not required and not expressed: 50%
+
+REASON GENERATION:
+- Strong points: categories with ≥80% score
+- Weak points: categories with <50% score
+- Summary format: "Strong: X, Y. Weak: Z."
+
+WHY THIS IS RELIABLE:
+- NO AI in scoring calculation
+- Pure mathematical formulas
+- Every score is auditable
+- Breakdown shows exactly why each score was given
+- Consistent: same inputs always produce same outputs
+
+LOCATION: search.ts, lines 797-937
+
+================================================================================
+6. QUALITY ASSURANCE SUMMARY
+================================================================================
+
+STRATEGY 1: CONSTRAINED OUTPUTS
+- Binary yes/no for validation
+- Short text for snippets (150 chars)
+- Structured JSON for data extraction
+- 2-3 sentence limits for responses
+
+STRATEGY 2: EXPLICIT RULES
+- "ONLY include explicitly stated facts"
+- "DO NOT guess or infer"
+- "Questions are curiosity, NOT interest"
+- Clear examples in prompts
+
+STRATEGY 3: SEPARATION OF CONCERNS
+- AI extracts structure from unstructured text
+- Code performs calculations and scoring
+- No "vibes-based" scoring
+
+STRATEGY 4: GRACEFUL DEGRADATION
+- null values for unknown data
+- Empty outputs acceptable
+- 50% scores for unknown fields (neutral, not penalty)
+
+STRATEGY 5: TRANSPARENCY
+- Every score has a breakdown
+- Every category shows points/max
+- Reasons cite specific strong/weak areas
+
+STRATEGY 6: VALIDATION LAYERS
+- JSON parsing validates structure
+- Regex validates embedded questions
+- Code deduplicates results
+
+--------------------------------------------------------------------------------
+RELIABILITY CONCLUSION
+--------------------------------------------------------------------------------
+
+The AI integrations in Afterlink are designed with the following principles:
+
+1. AI does understanding, code does scoring
+2. Strict rules prevent hallucination
+3. Structured outputs enable validation
+4. Transparency enables auditing
+5. Conservative defaults (50% for unknown, empty for no data)
+
+These design choices ensure that:
+- Lead data is factual, not inferred
+- Scores are consistent and explainable
+- Business decisions can be justified with specific criteria
+- The system degrades gracefully when information is missing
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
