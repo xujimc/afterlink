@@ -31,13 +31,15 @@ export function InlineChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll chat container to bottom when messages change (without affecting page scroll)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages, isLoading]);
 
   // Send the reader's question directly
   useEffect(() => {
@@ -115,7 +117,7 @@ export function InlineChat({
       </div>
 
       {/* Messages */}
-      <div style={{ maxHeight: "28rem", padding: "1.25rem", gap: "1rem" }} className="overflow-y-auto flex flex-col">
+      <div ref={messagesContainerRef} style={{ maxHeight: "28rem", padding: "1.25rem", gap: "1rem" }} className="overflow-y-auto flex flex-col">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -145,8 +147,6 @@ export function InlineChat({
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}

@@ -469,9 +469,10 @@ export default new Conversation({
       try {
         await articlesTable.deleteAllRows();
         await articleContentTable.deleteAllRows();
+        await userInsightsTable.deleteAllRows();
         await conversation.send({
           type: "text",
-          payload: { text: JSON.stringify({ success: true, message: "All articles deleted" }) },
+          payload: { text: JSON.stringify({ success: true, message: "All data cleared" }) },
         });
       } catch (error) {
         await conversation.send({
