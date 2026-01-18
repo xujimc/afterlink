@@ -125,7 +125,7 @@ export function InlineChat({
               style={{ padding: "1rem 1.25rem", borderRadius: "1rem" }}
               className={`max-w-[85%] ${
                 message.role === "user"
-                  ? "bg-gray-900 text-white"
+                  ? "bg-[#FFC017]/30 text-gray-900"
                   : "bg-white text-gray-900 border border-gray-200"
               }`}
             >
@@ -165,7 +165,7 @@ export function InlineChat({
             type="submit"
             disabled={isLoading || !inputValue.trim()}
             style={{ padding: "0.75rem 1.5rem", fontSize: "1rem", borderRadius: "2rem" }}
-            className="bg-gray-900 text-white hover:bg-black transition-colors disabled:opacity-50"
+            className="bg-[#FFC017] text-gray-900 hover:bg-[#FFD54F] transition-colors disabled:opacity-50"
           >
             Send
           </button>

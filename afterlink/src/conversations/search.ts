@@ -296,15 +296,13 @@ export default new Conversation({
              IMPORTANT: Do NOT answer the question directly. Instead:
              1. Acknowledge their question warmly
              2. Explain that the answer really depends on their personal situation
-             3. Ask ONE specific, friendly follow-up question to understand their situation better
+             3. Ask ONE specific follow-up question DIRECTLY RELATED to their question
 
-             Examples of follow-up questions you might ask:
-             - "What's your current experience level with this?"
-             - "Are you working within a specific budget?"
-             - "Do you have any particular concerns or constraints?"
+             CRITICAL: Your follow-up must be directly relevant to "${question}".
+             Do NOT ask about unrelated topics like budget, timeline, or other factors unless
+             they are directly necessary to answer THIS specific question.
 
-             Keep it conversational and genuinely curious - you want to help them get the most relevant answer.
-             Be warm and helpful, not interrogating. 2-3 sentences max.`,
+             Keep it conversational and brief. 2-3 sentences max.`,
             { length: 200 }
           );
         } else {
@@ -351,29 +349,36 @@ export default new Conversation({
             logger.info("[chat] No insights extracted or failed to parse");
           }
 
-          // Step 2: Generate helpful response that also probes for more info
+          // Step 2: Generate helpful response
           const historyText = conversationHistory
             .map((m) => `${m.role === "user" ? "Reader" : "Assistant"}: ${m.content}`)
             .join("\n");
+
+          // Get the original question (first user message in history)
+          const originalQuestion = conversationHistory.length > 0
+            ? conversationHistory[0].content
+            : question;
 
           response = await adk.zai.text(
             `You are a friendly, helpful assistant discussing an article with a reader.
 
              Article: "${articleTitle}"
+             Original question they clicked: "${originalQuestion}"
 
              Conversation so far:
              ${historyText}
 
              Reader's latest message: "${question}"
 
-             Respond helpfully:
-             1. Address what they said/asked with genuinely useful information
-             2. Be warm and conversational
-             3. Naturally weave in ONE follow-up question to learn more about them
-                (their goals, preferences, situation, experience, budget, timeline, etc.)
-             4. The follow-up should feel natural, not forced - like you're genuinely curious to help them better
+             YOUR TASK: Simply answer or respond to what they said. Be helpful and warm.
 
-             Keep it concise (2-3 sentences). Don't be pushy or interrogating.`,
+             STRICT RULES:
+             - Do NOT ask follow-up questions unless the user EXPLICITLY asked you something you cannot answer
+             - Do NOT introduce new topics
+             - Do NOT probe for more information
+             - Just respond to what they said, then stop
+
+             Keep it concise (2-3 sentences). No questions at the end.`,
             { length: 300 }
           );
         }
